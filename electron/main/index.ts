@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { type Quality, type Tools } from '../download/engine'
 import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
+import { CookieVault, platformForUrl } from '../cookies'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -162,6 +163,7 @@ async function toolPaths(): Promise<ToolPaths> {
 
 let queue: QueueManager | null = null
 let history: HistoryStore | null = null
+let cookieVault: CookieVault | null = null
 
 function getHistory(): HistoryStore {
   if (!history) {
@@ -170,6 +172,15 @@ function getHistory(): HistoryStore {
     })
   }
   return history
+}
+
+function getCookieVault(): CookieVault {
+  if (!cookieVault) {
+    cookieVault = new CookieVault((metas) => {
+      if (mainWindow) mainWindow.webContents.send('cookies:update', metas)
+    })
+  }
+  return cookieVault
 }
 
 function getQueue(): QueueManager {
@@ -194,6 +205,10 @@ function getQueue(): QueueManager {
           downloaded: task.downloaded,
           completedAt: Date.now()
         })
+      },
+      {
+        getCookiesFile: (platform: string) => getCookieVault().materialize(platform),
+        markExpired: (platform: string) => getCookieVault().markExpired(platform)
       }
     )
     // settings is the source of truth for concurrency
@@ -250,6 +265,49 @@ ipcMain.handle('history:list', async () => getHistory().list())
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
   return true
+})
+
+// ---- IPC: cookie profiles (Phase 2a) ----
+
+ipcMain.handle('cookies:list', async () => getCookieVault().list())
+
+ipcMain.handle('cookies:add', async (_event, opts: { platform: string; content: string }) => {
+  if (!opts.platform || typeof opts.content !== 'string' || !opts.content.trim()) {
+    throw new Error('Pick a platform and paste your cookies.txt content')
+  }
+  return getCookieVault().add(opts.platform, opts.content)
+})
+
+ipcMain.handle('cookies:remove', async (_event, platform: string) => {
+  getCookieVault().remove(platform)
+  return true
+})
+
+/**
+ * Live test: run yt-dlp metadata extraction with the profile's cookies
+ * against a user-supplied URL. Success = cookies work.
+ */
+ipcMain.handle('cookies:test', async (_event, opts: { platform: string; testUrl: string }) => {
+  const url = (opts.testUrl ?? '').trim()
+  if (!/^https?:\/\//i.test(url)) throw new Error('Give a valid test URL (e.g. an Instagram post link)')
+  const platform = platformForUrl(url) ?? opts.platform
+  const file = getCookieVault().materialize(platform)
+  if (!file) throw new Error(`No cookie profile for ${platform} — add one first`)
+  const tools = await toolPaths()
+  if (!tools.ytdlp) throw new Error('yt-dlp is not installed — get it from Settings first')
+  try {
+    await execFileAsync(
+      tools.ytdlp,
+      ['--cookies', file, '--dump-single-json', '--skip-download', '--no-warnings', '--no-playlist', url],
+      { timeout: 90_000, maxBuffer: 10 * 1024 * 1024 }
+    )
+    getCookieVault().markTested(platform, true)
+    return { ok: true }
+  } catch (err) {
+    getCookieVault().markTested(platform, false)
+    const msg = (err as Error).message.split('\n').find((l) => /ERROR/i.test(l)) ?? 'Cookie test failed'
+    throw new Error(msg.trim())
+  }
 })
 
 // ---- IPC: settings ----
