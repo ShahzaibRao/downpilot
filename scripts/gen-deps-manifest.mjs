@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 /**
- * 生成 backend/internal/manifest/assets.gen.go
+ * Generates backend/internal/manifest/assets.gen.go
  *
- * 从上游发布页抓取版本号与 SHA-256，写进 Go 侧车：
- *   - yt-dlp : yt-dlp-nightly-builds（nightly，站点修复更及时），官方提供 SHA2-256SUMS
- *   - ffmpeg : eugeneware/ffmpeg-static（静态构建，含 libmp3lame / aac / libx264），无校验值需自算
- *   - gallery-dl : gdl-org/builds（nightly standalone，yt-dlp 同一思路），无校验值需自算
- *   - deno   : denoland/deno（zip 包），官方提供 <asset>.sha256sum
+ * Fetches versions and SHA-256s from upstream release pages into the Go sidecar:
+ *   - yt-dlp : yt-dlp-nightly-builds (nightly — site fixes land faster), official SHA2-256SUMS provided
+ *   - ffmpeg : eugeneware/ffmpeg-static (static build with libmp3lame / aac / libx264), no published checksums — compute our own
+ *   - gallery-dl : gdl-org/builds (nightly standalone, same reasoning as yt-dlp), no published checksums — compute our own
+ *   - deno   : denoland/deno (zip packages), official <asset>.sha256sum provided
  *
- * 固定到某个 tag 而不是 "latest"：安装结果必须可复现、可校验，
- * 用户每次点"下载"都应拿到同一份字节串。
+ * Pin to a tag instead of "latest": installs must be reproducible and verifiable —
+ * every "download" click should fetch the exact same bytes.
  *
- * 网络统一走 curl 而不是 Node 的 fetch：Node 的 fetch 不读取 HTTP(S)_PROXY
- * 环境变量，在国内网络下几乎必失败，而 curl 原生支持。
+ * Network goes through curl, not Node's fetch: Node's fetch doesn't read HTTP(S)_PROXY
+ * env vars, which fails on most Chinese networks, while curl supports them natively.
  *
- * 用法：
- *   node scripts/gen-deps-manifest.mjs                 # 使用上游最新版本并重算全部哈希
- *   node scripts/gen-deps-manifest.mjs --ytdlp <tag>   # 固定 yt-dlp tag
- *   node scripts/gen-deps-manifest.mjs --ffmpeg <tag>  # 固定 ffmpeg tag
- *   node scripts/gen-deps-manifest.mjs --gallerydl <tag> # 固定 gallery-dl tag
- *   node scripts/gen-deps-manifest.mjs --deno <tag>    # 固定 deno tag
- *   node scripts/gen-deps-manifest.mjs --reuse-hashes  # 已有哈希不再重新下载（只新增缺失项）
- *   node scripts/gen-deps-manifest.mjs --check         # 轻量校验（CI 用，不重新下载大文件）
+ * Usage:
+ *   node scripts/gen-deps-manifest.mjs                 # use latest upstream versions and recompute all hashes
+ *   node scripts/gen-deps-manifest.mjs --ytdlp <tag>   # pin yt-dlp tag
+ *   node scripts/gen-deps-manifest.mjs --ffmpeg <tag>  # pin ffmpeg tag
+ *   node scripts/gen-deps-manifest.mjs --gallerydl <tag> # pin gallery-dl tag
+ *   node scripts/gen-deps-manifest.mjs --deno <tag>    # pin deno tag
+ *   node scripts/gen-deps-manifest.mjs --reuse-hashes  # don't re-download existing hashes (only resolve new ones)
+ *   node scripts/gen-deps-manifest.mjs --check         # light verification (for CI, no big downloads)
  */
 
 import { createHash } from 'node:crypto'
@@ -36,7 +36,7 @@ const GALLERYDL_REPO = 'gdl-org/builds'
 const DENO_REPO = 'denoland/deno'
 const OUT_FILE = path.resolve('backend/internal/manifest/assets.gen.go')
 
-/** yt-dlp 各平台使用的产物名 */
+/** Asset names yt-dlp uses per platform */
 const YTDLP_ASSETS = {
   'darwin/arm64': 'yt-dlp_macos',
   'darwin/x64': 'yt-dlp_macos',
@@ -45,7 +45,7 @@ const YTDLP_ASSETS = {
   'win32/x64': 'yt-dlp.exe',
 }
 
-/** ffmpeg-static 各平台使用的产物名（实际文件为 <name>.gz） */
+/** Asset names ffmpeg-static uses per platform (actual files are <name>.gz) */
 const FFMPEG_ASSETS = {
   'darwin/arm64': { ffmpeg: 'ffmpeg-darwin-arm64', ffprobe: 'ffprobe-darwin-arm64' },
   'darwin/x64': { ffmpeg: 'ffmpeg-darwin-x64', ffprobe: 'ffprobe-darwin-x64' },
@@ -55,9 +55,9 @@ const FFMPEG_ASSETS = {
 }
 
 /**
- * gallery-dl 各平台使用的产物名（gdl-org/builds 的 nightly standalone）。
- * 上游按 OS（不分 arch）发布：linux 构建为 x86_64，macos 构建以实际为准。
- * linux/arm64 上游无构建，此处跳过（manifest 生成时不报错，fetch 时提示不支持）。
+ * Asset names gallery-dl uses per platform (gdl-org/builds nightly standalone).
+ * Upstream publishes per OS (not arch): the linux build is x86_64, macos as published.
+ * No upstream build for linux/arm64 — skipped here (no manifest error; fetch reports unsupported).
  */
 const GALLERYDL_ASSETS = {
   'darwin/arm64': 'gallery-dl_macos',
@@ -66,7 +66,7 @@ const GALLERYDL_ASSETS = {
   'win32/x64': 'gallery-dl_windows.exe',
 }
 
-/** deno 各平台使用的产物名（zip 包，内含 deno / deno.exe） */
+/** Asset names deno uses per platform (zip packages containing deno / deno.exe) */
 const DENO_ASSETS = {
   'darwin/arm64': 'deno-aarch64-apple-darwin.zip',
   'darwin/x64': 'deno-x86_64-apple-darwin.zip',
@@ -94,8 +94,8 @@ function tmpFile(name) {
 }
 
 /**
- * 用 curl 抓取内容；redirect: 'follow' 对应 -L。
- * 网络抖动时重试，这是本项目里最省心的做法。
+ * Fetch content with curl; redirect: 'follow' corresponds to -L.
+ * Retry on network jitter — the most worry-free approach in this project.
  */
 function curlFetch(url, { binary = false, retries = 6 } = {}) {
   const out = binary ? tmpFile(`dl-${createHash('sha1').update(url).digest('hex')}`) : null
@@ -107,7 +107,7 @@ function curlFetch(url, { binary = false, retries = 6 } = {}) {
   return out ? readFileSync(out) : text
 }
 
-/** 带重试的 curl：本项目的网络（含 CI）会出现 TLS 抖动，统一在这里兜住 */
+/** curl with retries: this project's network (incl. CI) sees TLS jitter; handled centrally here */
 function curlText(textArgs, { retries = 5, quiet = false } = {}) {
   let lastError = ''
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -116,15 +116,15 @@ function curlText(textArgs, { retries = 5, quiet = false } = {}) {
     } catch (e) {
       lastError = e?.stderr?.toString().trim() || e?.message || ''
       if (attempt < retries) {
-        if (!quiet) console.warn(`  ! curl 第 ${attempt} 次失败，重试中`)
+        if (!quiet) console.warn(`  ! curl attempt ${attempt} failed, retrying`)
         waitBeforeRetry(attempt * 2)
       }
     }
   }
-  throw new Error(lastError || 'curl 执行失败')
+  throw new Error(lastError || 'curl failed')
 }
 
-/** 解析 `hash  filename` 形式的校验文件 */
+/** Parse `hash  filename` style checksum files */
 function parseSums(text) {
   const map = new Map()
   for (const line of String(text).split('\n')) {
@@ -135,15 +135,15 @@ function parseSums(text) {
 }
 
 /**
- * 取最新 tag。
+ * Resolve the latest tag.
  *
- * 不用 GitHub API：未认证时很快会被限流（403），
- * 改为读 releases/latest 的 302 跳转地址，稳定且无配额。
+ * Don't use the GitHub API: unauthenticated calls get rate-limited (403) quickly;
+ * instead read the 302 redirect target of releases/latest — stable and quota-free.
  */
 function latestTag(repo) {
   let tag = ''
   try {
-    // 不带 -L：需要捕获 302 的 Location 才能拿到 tag
+    // No -L: we need to capture the 302 Location to get the tag
     const location = curlText([
       '-sS', '-o', devNull, '-w', '%{redirect_url}', '--max-time', '60',
       `https://github.com/${repo}/releases/latest`,
@@ -152,7 +152,7 @@ function latestTag(repo) {
   } catch {}
 
   if (!tag) {
-    // 少数代理会直接跟随跳转：退回 GitHub API（未认证时可能限流，故仅作兜底）
+    // A few proxies follow redirects themselves: fall back to the GitHub API (may rate-limit unauthenticated, so last resort only)
     try {
       const json = curlText([
         '-fsSL', '--max-time', '60',
@@ -161,7 +161,7 @@ function latestTag(repo) {
       tag = JSON.parse(json).tag_name || ''
     } catch {}
   }
-  if (!tag) throw new Error(`无法确定 ${repo} 的最新 tag，请用 --ytdlp/--ffmpeg/--gallerydl/--deno 显式指定`)
+  if (!tag) throw new Error(`cannot determine latest tag for ${repo}; specify explicitly with --ytdlp/--ffmpeg/--gallerydl/--deno`)
   return decodeURIComponent(tag)
 }
 
@@ -174,7 +174,7 @@ async function resolveYtDlp(tag, { withHashes }) {
     const sums = parseSums(curlFetch(`${base}/SHA2-256SUMS`))
     for (const [platform, name] of Object.entries(YTDLP_ASSETS)) {
       const hash = sums.get(name)
-      if (!hash) throw new Error(`${resolvedTag} 的 SHA2-256SUMS 中缺少 ${name}`)
+      if (!hash) throw new Error(`${resolvedTag}'s SHA2-256SUMS is missing ${name}`)
       assets[platform] = { name, hash }
     }
   } else {
@@ -194,7 +194,7 @@ async function resolveFfmpeg(tag, { withHashes }) {
     assets[platform] = {}
     for (const key of ['ffmpeg', 'ffprobe']) {
       const name = kinds[key]
-      // 上游不公布校验值：更新模式下下载后自算，复用模式下留空由调用方回填
+      // Upstream publishes no checksums: compute after download in update mode; leave empty in reuse mode for the caller to fill
       const hash = withHashes
         ? createHash('sha256').update(curlFetch(`${base}/${name}.gz`, { binary: true })).digest('hex')
         : ''
@@ -210,7 +210,7 @@ async function resolveGalleryDl(tag, { withHashes }) {
 
   const assets = {}
   for (const [platform, name] of Object.entries(GALLERYDL_ASSETS)) {
-    // 上游不公布校验值：下载后自算（与 ffmpeg-static 同一模式）
+    // Upstream publishes no checksums: compute after download (same pattern as ffmpeg-static)
     const hash = withHashes
       ? createHash('sha256').update(curlFetch(`${base}/${name}`, { binary: true })).digest('hex')
       : ''
@@ -227,20 +227,20 @@ async function resolveDeno(tag, { withHashes }) {
   for (const [platform, name] of Object.entries(DENO_ASSETS)) {
     let hash = ''
     if (withHashes) {
-      // 官方为每个 zip 提供同名的 .sha256sum 文件（体积很小）。
-      // 注意：Windows 产物是 PowerShell Get-FileHash 风格（"Hash : <hex>"），
-      // macOS/Linux 是标准 "hash  filename" 格式——两种都兼容。
+      // Upstream provides a same-named .sha256sum file per zip (tiny).
+      // Note: Windows artifacts use PowerShell Get-FileHash style ("Hash : <hex>"),
+      // macOS/Linux use the standard "hash  filename" format — both are handled.
       const text = String(curlFetch(`${base}/${name}.sha256sum`))
       const m = text.match(/Hash\s*:\s*([0-9a-f]{64})/i)
       hash = (m?.[1] || parseSums(text).get(name) || [...parseSums(text).values()][0] || '').toLowerCase()
-      if (!hash) throw new Error(`${resolvedTag} 的校验文件中缺少 ${name}`)
+      if (!hash) throw new Error(`${resolvedTag}'s checksum file is missing ${name}`)
     }
     assets[platform] = { name, hash }
   }
   return { tag: resolvedTag, assets }
 }
 
-/** 从已生成的 Go 文件里读回现有 tag */
+/** Read existing tags back from the generated Go file */
 function readCurrentTags() {
   try {
     const src = readFileSync(OUT_FILE, 'utf8')
@@ -255,7 +255,7 @@ function readCurrentTags() {
   }
 }
 
-/** 从已生成的 Go 文件里读回现有哈希（--reuse-hashes 用） */
+/** Read existing hashes back from the generated Go file (for --reuse-hashes) */
 function readExistingHashes() {
   const out = { ytdlp: {}, ffmpeg: {}, gallerydl: {}, deno: {} }
   try {
@@ -289,7 +289,7 @@ function readExistingHashes() {
   return out
 }
 
-/** 校验/复用模式下保留文件里已有的哈希 */
+/** Keep existing hashes from the file in check/reuse mode */
 function hFill(asset, existingMap, platform, sub) {
   if (asset.hash) return asset.hash
   const e = sub ? existingMap?.[platform]?.[sub] : existingMap?.[platform]
@@ -323,23 +323,23 @@ function render(ytdlp, ffmpeg, gallerydl, deno, existing) {
 
   return `// Code generated by scripts/gen-deps-manifest.mjs; DO NOT EDIT.
 //
-// 由脚本从上游发布页抓取版本号与 SHA-256 后生成，请勿手改；
-// 升级依赖请运行：node scripts/gen-deps-manifest.mjs（或 pnpm deps:manifest）。
+// Generated by the script from upstream release pages — do not hand-edit;
+// to upgrade dependencies, run: node scripts/gen-deps-manifest.mjs (or pnpm deps:manifest).
 
 package manifest
 
 import rt "github.com/ShahzaibRao/downpilot/backend/internal/runtime"
 
-// YtDlpTag yt-dlp nightly 构建的固定 tag（日期版本号）
+// YtDlpTag is the pinned tag of the yt-dlp nightly build (date version)
 const YtDlpTag = "${ytdlp.tag}"
 
-// FFmpegTag ffmpeg-static 的固定 tag
+// FFmpegTag is the pinned ffmpeg-static tag
 const FFmpegTag = "${ffmpeg.tag}"
 
-// GalleryDlTag gallery-dl nightly standalone 构建的固定 tag（日期版本号，gdl-org/builds）
+// GalleryDlTag is the pinned tag of the gallery-dl nightly standalone build (date version, gdl-org/builds)
 const GalleryDlTag = "${gallerydl.tag}"
 
-// DenoTag deno 的固定 tag
+// DenoTag is the pinned deno tag
 const DenoTag = "${deno.tag}"
 
 const (
@@ -349,28 +349,28 @@ const (
 \tdenoBase      = "https://github.com/${DENO_REPO}/releases/download/" + DenoTag
 )
 
-// ytdlpAssets yt-dlp 在各平台的产物与 SHA-256
+// ytdlpAssets: yt-dlp artifacts and SHA-256 per platform
 var ytdlpAssets = map[string]asset{
 ${ytdlpLines}
 }
 
-// ffmpegAssets ffmpeg / ffprobe 在各平台的产物与 SHA-256。
+// ffmpegAssets: ffmpeg / ffprobe artifacts and SHA-256 per platform.
 //
-// 选用 ffmpeg-static（静态构建）而非 BtbN：体积更小、gzip 单文件便于校验，
-// 且带 libmp3lame / aac / libx264，覆盖音频转换与音视频合并两种用途。
+// ffmpeg-static (static build) is chosen over BtbN: smaller, single gzip file is easy to verify,
+// and it bundles libmp3lame / aac / libx264, covering both audio conversion and A/V merging.
 var ffmpegAssets = map[string]map[rt.Kind]asset{
 ${ffmpegLines}
 }
 
-// gallerydlAssets gallery-dl 在各平台的产物与 SHA-256。
+// gallerydlAssets: gallery-dl artifacts and SHA-256 per platform.
 //
-// 选用 gdl-org/builds 的 nightly standalone（含 Python 解释器，无需用户装 Python），
-// 与 yt-dlp 同一思路：站点修复更及时。linux/arm64 上游无构建， manifest 生成时跳过。
+// Uses gdl-org/builds nightly standalone (bundles a Python interpreter — users don't install Python),
+// same reasoning as yt-dlp: site fixes land faster. No upstream build for linux/arm64 — skipped at manifest generation.
 var gallerydlAssets = map[string]asset{
 ${gallerydlLines}
 }
 
-// denoAssets deno 在各平台的产物与 SHA-256（zip 包，内含 deno / deno.exe）。
+// denoAssets: deno artifacts and SHA-256 per platform (zip packages containing deno / deno.exe).
 var denoAssets = map[string]asset{
 ${denoLines}
 }
@@ -378,11 +378,11 @@ ${denoLines}
 }
 
 /**
- * 判断产物是否可下载。
+ * Check whether an artifact is downloadable.
  *
- * 用带 Range 的 GET 而不是 HEAD：GitHub Release 的 HEAD 会跳到
- * release-assets.githubusercontent.com，部分网络下该主机直连会失败；
- * 而范围下载既能确认文件存在，又能只拉 1 字节。
+ * Use a ranged GET instead of HEAD: GitHub release HEADs redirect to
+ * release-assets.githubusercontent.com, which fails to connect directly on some networks;
+ * a ranged download both confirms existence and pulls just 1 byte.
  */
 function assetAvailable(url) {
   const attempts = 6
@@ -398,14 +398,14 @@ function assetAvailable(url) {
       if (attempt < attempts) waitBeforeRetry(attempt * 2)
     }
   }
-  console.warn(`  ! 无法确认产物是否存在（网络原因），跳过：${url}`)
+  console.warn(`  ! cannot confirm artifact exists (network), skipping: ${url}`)
   return null
 }
 
 async function main() {
   const existingTags = readCurrentTags()
   const existing = readExistingHashes()
-  console.log('检查上游版本...')
+  console.log('checking upstream versions...')
 
   if (checkOnly) {
     for (const [label, repo, key] of [
@@ -415,18 +415,18 @@ async function main() {
       ['deno', DENO_REPO, 'deno'],
     ]) {
       const tag = latestTag(repo)
-      console.log(`  上游 ${label} : ${tag}（本地 ${existingTags[key] || '未知'}）`)
+      console.log(`  upstream ${label} : ${tag} (local ${existingTags[key] || 'unknown'})`)
       if (tag !== existingTags[key]) {
-        console.error(`\n清单校验未通过：${label} 版本落后：本地 ${existingTags[key]} → 上游 ${tag}`)
-        console.error('运行 `pnpm deps:manifest` 更新清单。')
+        console.error(`\nmanifest check failed: ${label} is behind: local ${existingTags[key]} → upstream ${tag}`)
+        console.error('run `pnpm deps:manifest` to update the manifest.')
         process.exit(1)
       }
     }
-    console.log('清单与上游一致')
+    console.log('manifest matches upstream')
     return
   }
 
-  // --reuse-hashes：已有哈希不再重新下载，只解析新增项
+  // --reuse-hashes: don't re-download existing hashes, only resolve new ones
   const skipBig = reuseHashes
   const ytdlp = await resolveYtDlp(argValue('--ytdlp') || existingTags.ytdlp, { withHashes: !skipBig })
   const ffmpeg = await resolveFfmpeg(argValue('--ffmpeg') || existingTags.ffmpeg, { withHashes: !skipBig })
@@ -438,12 +438,12 @@ async function main() {
   console.log(`  deno : ${deno.tag}`)
 
   writeFileSync(OUT_FILE, render(ytdlp, ffmpeg, gallerydl, deno, existing), 'utf8')
-  console.log(`已写入 ${path.relative(process.cwd(), OUT_FILE)}`)
+  console.log(`wrote ${path.relative(process.cwd(), OUT_FILE)}`)
 }
 
 main()
   .catch((e) => {
-    console.error(`生成失败：${e.message}`)
+    console.error(`generation failed: ${e.message}`)
     process.exitCode = 1
   })
   .finally(() => {
