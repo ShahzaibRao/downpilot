@@ -1,10 +1,10 @@
-// Package runtime 负责在机器上查找 yt-dlp / ffmpeg / ffprobe。
+// Package runtime finds yt-dlp / ffmpeg / ffprobe / gallery-dl / deno on the machine.
 //
-// 查找顺序（系统优先，缺失才由 DownPilot 下载）：
-//  1. 显式指定的路径（设置里手动选择）
-//  2. userData 托管目录（DownPilot 自己下载安装的）
-//  3. 登录 shell 的 PATH（GUI 应用常拿不到完整 PATH，这一步很关键）
-//  4. 各平台常见安装目录（Homebrew / winget / scoop / 发行版路径）
+// Search order (managed dir first, then system locations):
+//  1. Explicitly specified path (manually chosen in Settings)
+//  2. userData managed dir (downloaded and installed by DownPilot itself)
+//  3. Login shell's PATH (GUI apps often don't get the full PATH — this step is critical)
+//  4. Common install dirs per platform (Homebrew / winget / scoop / distro paths)
 package runtime
 
 import (
@@ -21,7 +21,7 @@ import (
 	"github.com/ShahzaibRao/downpilot/backend/internal/probe"
 )
 
-// Kind 依赖种类
+// Kind is the dependency kind
 type Kind string
 
 const (
@@ -32,15 +32,15 @@ const (
 	KindDeno      Kind = "deno"
 )
 
-// Kinds 全部依赖，顺序即界面展示顺序
+// Kinds lists all dependencies; order is the UI display order
 var Kinds = []Kind{KindYtDlp, KindFFmpeg, KindFFprobe, KindGalleryDl, KindDeno}
 
-// Optional 标记非必需依赖：ffprobe 只在部分后处理场景用到；
-// gallery-dl 是 yt-dlp 的回退引擎（缺失只影响图片类下载）；
-// deno 只在 YouTube 下载时需要（POT 服务）。
+// Optional marks non-required dependencies: ffprobe is only used in some post-processing;
+// gallery-dl is yt-dlp's fallback engine (missing it only affects image downloads);
+// deno is only needed for YouTube downloads (POT service).
 var Optional = map[Kind]bool{KindFFprobe: true, KindGalleryDl: true, KindDeno: true}
 
-// BinaryName 工具在磁盘上的文件名
+// BinaryName is the tool's file name on disk
 func BinaryName(kind Kind) string {
 	if runtime.GOOS == "windows" {
 		return string(kind) + ".exe"
@@ -48,23 +48,23 @@ func BinaryName(kind Kind) string {
 	return string(kind)
 }
 
-// Source 依赖来源，用于界面标识与排查
+// Source is where a dependency came from, for UI labels and troubleshooting
 type Source string
 
 const (
-	SourceManaged Source = "managed" // DownPilot 下载到 userData 的
-	SourceSystem  Source = "system"  // 系统安装（PATH / 常见目录）
-	SourceManual  Source = "manual"  // 用户在设置里手动指定
-	SourceScanned Source = "scanned" // 保底全盘扫描发现的（不在已知安装位置）
+	SourceManaged Source = "managed" // downloaded into userData by DownPilot
+	SourceSystem  Source = "system"  // system install (PATH / common dirs)
+	SourceManual  Source = "manual"  // user-specified in Settings
+	SourceScanned Source = "scanned" // found by the fallback full scan (not in a known location)
 )
 
-// Options 探测输入
+// Options is the input for detection
 type Options struct {
-	ManagedDir  string          // 托管目录，例如 <userData>/runtime/bin
-	ManualPaths map[Kind]string // 用户手动指定的绝对路径
+	ManagedDir  string          // managed dir, e.g. <userData>/runtime/bin
+	ManualPaths map[Kind]string // user-specified absolute paths
 }
 
-// Result 单个依赖的探测结果。Found=false 时 Reason 说明为什么没找到。
+// Result is one dependency's detection result. When Found=false, Reason explains why not.
 type Result struct {
 	Kind     string `json:"kind"`
 	Found    bool   `json:"found"`
@@ -73,31 +73,33 @@ type Result struct {
 	Version  string `json:"version,omitempty"`
 	Source   string `json:"source,omitempty"`
 	Reason   string `json:"reason,omitempty"`
-	Managed  bool   `json:"managed,omitempty"` // 该依赖由 DownPilot 托管，可安全覆盖更新
-	// RequiredVersion 是当前清单要求的最低版本。界面用它判断「是否真的该提示更新」：
-	// 早先只看 Managed 就显示「更新」按钮，于是**版本与清单一致时也显示更新**，
-	// 用户点了才发现白下 37MB。
+	Managed  bool   `json:"managed,omitempty"` // this dep is managed by DownPilot and safe to overwrite on update
+	// RequiredVersion is the minimum version the current manifest requires. The UI uses it to decide
+	// whether an "update" prompt is really warranted: it used to show "update" whenever Managed
+	// was true, so users saw "update" even when the version already matched the manifest —
 	RequiredVersion string `json:"requiredVersion,omitempty"`
-	// Stale 表示「找到了可用副本，但版本落后于清单」。Found=false + Stale=true
-	// 时界面才应该主动引导更新。
+	// Stale means "found a usable copy, but its version lags the manifest". Only when
+	// Found=false + Stale=true should the UI actively guide the user to update.
 	Stale bool `json:"stale,omitempty"`
 }
 
-// FindAll 依次探测全部依赖
+// and downloaded 37MB for nothing.
+
+// FindAll detects all dependencies in order
 func FindAll(opts Options) []Result {
 	ctx, cancel := context.WithTimeout(context.Background(), DetectTimeout)
 	defer cancel()
 	return FindAllContext(ctx, opts)
 }
 
-// DetectTimeout 小于 Electron 的 90 秒超时，给 JSON 回传留出余量。
+// DetectTimeout is below Electron's 90s timeout, leaving margin for the JSON round-trip.
 //
-// 总时限必须容得下「一个依赖里最坏的那条路径」：托管副本 15 秒
-// （见 probe.CandidateTimeout，yt-dlp 官方 macOS 构建首次执行最慢实测
-// 12.4 秒）＋ 保底扫描 18 秒（见 scanTimeLimit）＝ 33 秒，仍远小于 80。
+// The total budget must fit the worst path within a single dependency: 15s for the managed copy
+// (see probe.CandidateTimeout — yt-dlp's official macOS build measured 12.4s at slowest on first run)
+// + 18s for the fallback scan (see scanTimeLimit) = 33s, still far below 80.
 //
-// 这是总时限的**唯一来源**：Electron 侧刻意不再传 `--timeout`（曾硬编码
-// 70 秒把它覆盖掉，让「文档写 80、实际跑 70」静默对不上）。
+// This is the SINGLE source of the total timeout: the Electron side deliberately no longer passes
+// --timeout (it once hard-coded 70s and overrode this, silently contradicting the documented 80).
 const DetectTimeout = 80 * time.Second
 
 func FindAllContext(ctx context.Context, opts Options) []Result {
@@ -108,7 +110,7 @@ func FindAllContext(ctx context.Context, opts Options) []Result {
 	return results
 }
 
-// FindOne 探测单个依赖（下载完成后用于回读结果）
+// FindOne detects a single dependency (used to re-read results after a download)
 func FindOne(kind Kind, opts Options) Result { return findOne(kind, opts) }
 
 func findOne(kind Kind, opts Options) Result {
@@ -119,33 +121,33 @@ func findOneContext(parent context.Context, kind Kind, opts Options) Result {
 	ctx, cancel := context.WithTimeout(parent, probeTimeLimit)
 	defer cancel()
 	res := Result{Kind: string(kind), Optional: Optional[kind]}
-	// 重置扫描预算与时限：每个依赖独立计算，避免前一个把额度用光
+	// Reset scan budget and deadline: each dependency gets its own, so one can't drain the next
 	resetScanBudget()
 	resetProbeBudget()
 
-	// 记录失败原因时**优先保留有信息量的那个**：
-	// 「版本过旧」远比「某个候选路径不存在」重要，而后者总是最后一个，
-	// 直接用 lastErr 会把前者覆盖掉（用户只看到 stat no such file）。
-	var staleErr error // 找到了文件但版本太旧
-	staleSeen := false // 至少有一个副本因版本过旧被拒
-	var probeErr error // 找到了文件但执行失败（损坏、无权限等）
-	var lastErr error  // 其它（路径不存在之类）
+	// When recording failure reasons, keep the MOST informative one:
+	// "version too old" matters far more than "some candidate path doesn't exist", but the latter
+	// always comes last — using lastErr directly would bury the former (user only sees stat no such file).
+	var staleErr error // found the file but the version is too old
+	staleSeen := false // at least one copy was rejected for being too old
+	var probeErr error // found the file but it failed to run (corrupt, no permission, etc.)
+	var lastErr error  // everything else (path doesn't exist, etc.)
 	for _, c := range candidatesFor(kind, opts) {
 		if ctx.Err() != nil {
 			break
 		}
-		// 卡死的候选会各自吃掉一个候选预算，若不加这道闸，十几个候选
-		// 最坏能把一个依赖拖上几分钟。超过总预算就收手，宁可漏报也不要
-		// 让界面一直转圈。
+		// A stuck candidate eats one candidate budget each; without this gate, a dozen candidates
+		// could drag one dependency out for minutes. Stop at the total budget — better to
+		// under-report than to leave the UI spinning forever.
 		if probeBudgetExhausted() {
 			break
 		}
 		info, err := probeToolCandidate(ctx, kind, c)
 		if err != nil {
 			if _, statErr := os.Stat(c.Path); statErr == nil {
-				probeErr = err // 文件存在但跑不起来，值得展示
+				probeErr = err // file exists but won't run — worth showing
 			} else {
-				lastErr = err // 路径不存在，信息量最低
+				lastErr = err // path doesn't exist — least informative
 			}
 			continue
 		}
@@ -163,15 +165,15 @@ func findOneContext(parent context.Context, kind Kind, opts Options) Result {
 		return res
 	}
 
-	// 保底：已知目录都没命中时，做一次**有界的**全盘扫描。
+	// Fallback: when no known dir hit, do one BOUNDED full scan.
 	//
-	// 为什么需要：候选目录是枚举出来的，覆盖不了便携版、自定义安装目录、
-	// 或者将来某个包管理器换的新落点。这类情况下用户明明装了却被告知缺失，
-	// 且无从下手。
+	// Why it's needed: candidate dirs are enumerated, so they miss portable installs, custom
+	// install dirs, or wherever some future package manager decides to put things. In those cases
+	// the user clearly has it installed but we'd report it missing, with nothing to act on.
 	//
-	// 为什么必须有界：全盘遍历在 Windows 上可能耗时很久（且会扫到网络盘）。
-	// 因此只扫几个最可能的根目录、限制深度与访问条目数、命中即停。
-	// 扫描预算从扫描开始计算，不能被前面的版本执行消耗掉。
+	// Why it must be bounded: a full walk can take very long on Windows (and hits network drives).
+	// So only scan a few most-likely roots, limit depth and visited entries, stop on first hit.
+	// The scan budget starts counting at scan start — earlier version probes must not consume it.
 	resetScanBudget()
 	if deadline, ok := ctx.Deadline(); ok && deadline.Before(scanDeadline) {
 		scanDeadline = deadline
@@ -190,63 +192,63 @@ func findOneContext(parent context.Context, kind Kind, opts Options) Result {
 
 	switch {
 	case ctx.Err() != nil:
-		res.Reason = "依赖检测达到时限，请手动指定可执行文件路径后重试"
+		res.Reason = "dependency detection timed out; specify the executable path manually and retry"
 	case staleErr != nil:
-		// 「版本过旧」比「某个路径不存在」有信息量得多，必须优先展示
+		// "Version too old" is far more informative than "some path doesn't exist" — show it first
 		res.Reason = staleErr.Error()
 	case probeErr != nil:
 		res.Reason = probeErr.Error()
 	case lastErr != nil && !isNotExist(lastErr):
 		res.Reason = lastErr.Error()
 	default:
-		res.Reason = "未在托管目录、PATH、常见安装目录中找到（已尝试扫描常见位置）"
+		res.Reason = "not found in the managed dir, PATH, or common install dirs (common locations were scanned)"
 	}
 	return res
 }
 
-// requiredVersion 返回该依赖当前要求的最低版本；未注入时为 ""。
+// requiredVersion returns the minimum version the manifest currently requires for a dep; "" if not injected.
 //
-// 单独抽出来是因为它要出现在**每一条**返回路径上：界面靠它判断
-// 「装了但版本不够」与「装的就是要求的版本」——后者不该提示更新。
+// It's factored out because it must appear on EVERY return path: the UI uses it to tell
+// "installed but too old" apart from "installed at the required version" — the latter must not prompt an update.
 func requiredVersion(kind Kind) string {
 	return MinVersions[kind]
 }
 
-// isNotExist 判断错误是否只是"路径不存在"——这类原因没有诊断价值，
-// 展示出来只会把真正的原因（版本过旧、文件损坏）挤掉
+// isNotExist tells whether an error is merely "path doesn't exist" — such reasons have no
+// diagnostic value; showing them would crowd out the real cause (too old, corrupt file)
 func isNotExist(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file or directory")
 }
 
-// probeTimeoutMarker 与 probe 包的超时文案约定一致（probe.describeRunError）。
-// 用字符串而不是错误类型，是因为超时可能由 probe 自己的子超时产生，
-// 也可能由上游 ctx 取消产生，两者都被包装成了 errors.New。
-const probeTimeoutMarker = "执行超时"
+// probeTimeoutMarker must stay in sync with probe's timeout wording (probe.describeRunError).
+// A string, not an error type, because a timeout can come from probe's own sub-timeout
+// or from an upstream ctx cancel — both are wrapped as errors.New.
+const probeTimeoutMarker = "execution timed out"
 
-// isProbeTimeout 判断错误是否为"执行超时"（而非损坏、无权限、格式不对）
+// isProbeTimeout tells whether an error is a timeout (as opposed to corrupt / no permission / bad format)
 func isProbeTimeout(err error) bool {
 	return err != nil && strings.Contains(err.Error(), probeTimeoutMarker)
 }
 
-// probeTimeLimit 是**一个依赖内**执行候选文件的总预算。
+// probeTimeLimit is the total budget for executing candidate files WITHIN one dependency.
 //
-// 为什么需要这道闸：卡死的候选会各自吃掉一个候选预算，而候选表里可能有
-// 十几个路径（PATH + 各平台常见安装目录），最坏情况能把一个依赖拖上几分钟。
+// Why this gate exists: stuck candidates each eat a candidate budget, and the candidate list can hold
+// a dozen paths (PATH + common install dirs per platform) — worst case drags one dep out for minutes.
 //
-// 取值：托管副本 15 秒（首次执行最慢实测 12.4 秒）＋ 若干个 5 秒的系统候选。
-// 这个数字是**上界**而不是典型值：正常情况下托管副本命中就结束了。
+// Value: 15s for the managed copy (slowest measured first run: 12.4s) + several 5s system candidates.
+// This is an UPPER BOUND, not the typical case: normally the managed copy hits and it's over.
 const probeTimeLimit = 45 * time.Second
 
-// probeDeadline 单次探测候选的 wall-clock 上限，由 findOne 在每次探测前设置。
+// probeDeadline is the wall-clock cap for probing candidates in one pass, set by findOne before each pass.
 var probeDeadline time.Time
 
-// resetProbeBudget 重置候选执行总预算。与 resetScanBudget 一样是包级状态，
-// 抽成函数让测试能显式重置（否则用例之间会互相影响，见 scan 那边的教训）。
+// resetProbeBudget resets the candidate-execution budget. Like resetScanBudget it's package-level state;
+// factored into a function so tests can reset it explicitly (otherwise cases affect each other — see the scan lesson).
 func resetProbeBudget() {
 	probeDeadline = time.Now().Add(probeTimeLimit)
 }
 
-// probeBudgetExhausted 判断候选执行总预算是否已用尽。零值视为无期限。
+// probeBudgetExhausted tells whether the candidate-execution budget is exhausted. Zero means no limit.
 func probeBudgetExhausted() bool {
 	if probeDeadline.IsZero() {
 		return false
@@ -254,10 +256,10 @@ func probeBudgetExhausted() bool {
 	return time.Now().After(probeDeadline)
 }
 
-// scanForBinary 在常见根目录下有限度地搜索可执行文件。
+// scanForBinary searches common roots for the executable, within limits.
 //
-// 只作为保底：正常路径（托管目录 / PATH / 常见安装目录）都已尝试过才会走到这里。
-// 扫到的结果标记为 SourceScanned，界面会提示"自动扫描发现"，便于用户判断来源。
+// Only as a fallback: reached after the normal paths (managed dir / PATH / common dirs) were all tried.
+// Hits are marked SourceScanned; the UI shows "auto-scan found" so users can judge the source.
 func scanForBinary(ctx context.Context, kind Kind) *probe.Info {
 	name := BinaryName(kind)
 	seen := map[string]bool{}
@@ -286,23 +288,23 @@ func scanForBinary(ctx context.Context, kind Kind) *probe.Info {
 	return nil
 }
 
-// scanDir 在 dir 下最多下探 maxDepth 层查找 name。
+// scanDir looks for name under dir, at most maxDepth levels deep.
 //
-// 限制点：
-//   - 深度（默认 4 层）：够到 `.../bin/yt-dlp`、`.../ffmpeg/bin/ffmpeg.exe` 这类层级
-//   - 目录数预算：真正决定耗时的是**递归进入的目录数**（每次 ReadDir 是系统调用），
-//     而不是单个目录里有多少文件
-//   - 跳过明显无关的目录（node_modules、缓存、系统目录）
+// Limits:
+//   - depth (default 4): reaches `.../bin/yt-dlp`, `.../ffmpeg/bin/ffmpeg.exe` style layouts
+//   - dir budget: what really decides cost is the number of DIRECTORIES RECURSED INTO (each ReadDir is a syscall),
+//     not how many files a single dir holds
+//   - skip obviously irrelevant dirs (node_modules, caches, system dirs)
 func scanDir(dir string, name string, depth int) string {
 	return scanDirMatching(dir, name, depth, func(string) bool { return true })
 }
 
-// 无效或过旧的同名文件不应遮蔽同一目录树中的其他副本。
+// An invalid or outdated same-named file must not shadow other copies in the same tree.
 func scanDirMatching(dir string, name string, depth int, accept func(string) bool) string {
-	// 三道闸：深度、目录数预算、以及 wall-clock 上限。
-	// 加时间上限是因为目录数预算无法约束"每个目录都很慢"的情况
-	// （Windows 上 Program Files 叠加杀软扫描，单次 ReadDir 可能数百毫秒）。
-	// 没有它，"保底扫描"可能反而让用户看到"依赖检测超时"。
+	// Three gates: depth, dir budget, and a wall-clock cap.
+	// The time cap exists because the dir budget can't bound "every single dir is slow"
+	// (on Windows, Program Files + antivirus scanning can make one ReadDir take hundreds of ms).
+	// Without it, the "fallback scan" could itself surface as "dependency detection timed out".
 	if depth > scanMaxDepth || scanDirsLeft <= 0 || scanExpired(time.Now()) {
 		return ""
 	}
@@ -325,7 +327,7 @@ func scanDirMatching(dir string, name string, depth int, accept func(string) boo
 			continue
 		}
 
-		// 命中：文件名完全匹配（Windows 上大小写不敏感）
+		// Hit: file name matches exactly (case-insensitive on Windows)
 		if strings.EqualFold(e.Name(), name) && accept(full) {
 			return full
 		}
@@ -341,44 +343,44 @@ func scanDirMatching(dir string, name string, depth int, accept func(string) boo
 
 const scanMaxDepth = 4
 
-// scanDirsLeft 是单次扫描允许**进入**的目录数上限。
+// scanDirsLeft caps how many directories a single scan may ENTER.
 //
-// 刻意按目录数而不是条目数计：早先按条目计（20000 条），在 Windows 上扫
-// `C:\Program Files` 一个大目录就耗尽了预算，导致保底扫描形同虚设
-// ——CI 的 windows job 正是这样把它暴露出来的。
+// Deliberately counted by dirs, not entries: it used to count entries (20000), and on Windows
+// a single big dir like `C:\Program Files` exhausted the budget, making the fallback scan useless
+// — the CI windows job is exactly what exposed this.
 //
-// 每探测一个依赖都会重置。
+// Reset before each dependency is probed.
 var scanDirsLeft = scanMaxDirs
 
-// scanMaxDirs 单次扫描允许进入的目录数上限
+// scanMaxDirs caps how many dirs a single scan may enter
 const scanMaxDirs = 3000
 
-// scanDeadline 是单次扫描的 wall-clock 上限，由 findOne 在每次探测前设置。
+// scanDeadline is the wall-clock cap for one scan, set by findOne before each probe.
 var scanDeadline time.Time
 
-// scanTimeLimit 单次扫描最多占用多久。宁可漏扫也不要把检测拖成超时。
+// scanTimeLimit caps how long one scan may take. Better to miss than to time the detection out.
 //
-// 必须**大于** probe.CandidateTimeout：否则扫描命中的第一个可执行文件
-// （比如正是刚下载好的托管副本，首次执行本机实测最慢 12.4 秒）必然被扫描
-// 时限掐断，保底扫描就永远发现不了它。CandidateTimeout + 一个候选的余量。
+// Must be GREATER than probe.CandidateTimeout: otherwise the first executable the scan hits
+// (e.g. the just-downloaded managed copy, slowest measured first run 12.4s) would always be
+// cut off by the scan deadline, and the fallback scan could never find it. CandidateTimeout + one candidate's margin.
 const scanTimeLimit = 18 * time.Second
 
-// resetScanBudget 重置扫描的目录数预算与时限。
+// resetScanBudget resets the scan dir budget and deadline.
 //
-// 抽成函数是为了让测试能显式重置全局状态：这两个变量是包级可变状态，
-// 用例之间会互相影响（CI 上就出现过"上一个用例把时限设成过去"导致
-// 下一个用例静默失败）。
+// Factored out so tests can explicitly reset global state: these two vars are package-level mutable state,
+// and cases affect each other (CI once had "the previous case set the deadline in the past"
+// silently failing the next case).
 func resetScanBudget() {
 	scanDirsLeft = scanMaxDirs
 	scanDeadline = time.Now().Add(scanTimeLimit)
 }
 
-// scanExpired 判断扫描是否已超时。
+// scanExpired tells whether the scan has timed out.
 //
-// **零值必须视为"无期限"而不是"已过期"**：time.Time 的零值下
-// `now.After(zero)` 恒为 true，会让扫描静默地什么都不做。
-// 这个坑被 CI 抓到了——直接调用 scanDir 的用例（未经过 findOne 设置时限）
-// 在 Windows 上（更慢、更容易触到）失败。
+// **Zero must mean "no deadline", not "expired"**: with time.Time's zero value,
+// `now.After(zero)` is always true, which would make the scan silently do nothing.
+// CI caught this pitfall — cases calling scanDir directly (without findOne setting a deadline)
+// failed on Windows (slower, easier to hit).
 func scanExpired(now time.Time) bool {
 	if scanDeadline.IsZero() {
 		return false
@@ -386,7 +388,7 @@ func scanExpired(now time.Time) bool {
 	return now.After(scanDeadline)
 }
 
-// shouldSkipDir 跳过明显不可能放可执行文件、或体量过大的目录
+// shouldSkipDir skips dirs that obviously can't hold executables, or are too big
 func shouldSkipDir(name string) bool {
 	switch strings.ToLower(name) {
 	case "node_modules", ".git", ".cache", "cache", "caches", "logs", "tmp", "temp",
@@ -396,9 +398,9 @@ func shouldSkipDir(name string) bool {
 	return false
 }
 
-// scanRoots 返回扫描的根目录，按可能性排序。
+// scanRoots returns scan roots, ordered by likelihood.
 //
-// 只放"用户会自己放东西"的地方，不放整个磁盘根（在 Windows 上遍历 C:\ 太慢）。
+// Only places "where users put things themselves" — never whole disk roots (walking C:\ on Windows is too slow).
 func scanRoots() []string {
 	home, _ := os.UserHomeDir()
 	var roots []string
@@ -435,39 +437,39 @@ func scanRoots() []string {
 	return roots
 }
 
-// MinVersions 是各依赖的最低可用版本，由 CLI 从清单注入。
+// MinVersions holds each dep's minimum usable version, injected by the CLI.
 //
-// 为什么不让本包直接读清单：`manifest` 需要 import 本包（为了平台键），
-// 反向引用会造成 import cycle。因此由 CLI（同时能看到两者）注入。
+// Why this package doesn't read the manifest directly: `manifest` imports this package (for platform keys),
+// and a reverse import would create an import cycle. So the CLI (which sees both) injects them.
 //
-// **yt-dlp 的值是清单里 pin 的 tag**：它是日期版本号，站点修复以周为单位发布，
-// 按年份判断太松 —— 实测 2026.08.19 的版本跑 YouTube 会报
-// `Requested format is not available`（上游同类 issue 已在新版修复），
-// 而按年份它会「通过检测」，用户因此长期停在跑不动的版本上。
+// **yt-dlp's value is the manifest-pinned tag**: it uses date versions, and site fixes ship weekly,
+// so judging by year is too lax — the 2026.08.19 build was observed failing YouTube with
+// `Requested format is not available` (upstream fixed the same class of issue in a newer build),
+// while a year-based check would "pass" it — leaving users stuck on a build that can't run.
 var MinVersions = map[Kind]string{}
 
-// isAcceptableVersion 判断探测到的版本是否可用
+// isAcceptableVersion decides whether a detected version is usable
 func isAcceptableVersion(kind Kind, info probe.Info) bool {
 	if min, ok := MinVersions[kind]; ok && min != "" {
 		return !probe.IsOlder(info.Version, min)
 	}
-	// 未注入门槛时退回粗判（按主版本号）
+	// Without an injected threshold, fall back to the coarse check (by major version)
 	if min, ok := probe.MinimumMajor[string(kind)]; ok {
 		return info.Major >= min
 	}
 	return true
 }
 
-// staleReason 生成「版本过旧」的提示，带上当前版本与要求版本，便于用户判断
+// staleReason builds the "version too old" message, with current and required versions for the user to judge
 func staleReason(kind Kind, info probe.Info) error {
 	if min, ok := MinVersions[kind]; ok && min != "" {
-		return errors.New("版本过旧（当前 " + info.Version + "，需要 " + min +
-			" 或更新），建议在「设置 → 运行依赖」中重新下载")
+		return errors.New("version too old (current " + info.Version + ", need " + min +
+			" or newer); re-download under \u201cSettings \u2192 Runtime dependencies\u201d")
 	}
-	return errors.New("版本过旧（" + info.Version + "），建议重新下载")
+	return errors.New("version too old (" + info.Version + "); re-download is recommended")
 }
 
-// ===== 候选路径 =====
+// ===== candidate paths =====
 
 type candidate struct {
 	Path   string
@@ -516,11 +518,11 @@ func probeToolContext(ctx context.Context, kind Kind, path string) (probe.Info, 
 	return probeToolCandidate(ctx, kind, candidate{Path: path, Source: SourceSystem})
 }
 
-// probeToolCandidate 按候选来源决定执行时限。
+// probeToolCandidate picks the execution timeout by candidate source.
 //
-// 托管副本是我们自己下载的官方构建（PyInstaller，首次执行最慢实测 12.4 秒），
-// 必须给足；系统副本通常是 0.2 秒的 zipapp，卡死时要尽快放弃——
-// 候选表里可能有十几个路径，每个都等 15 秒会把一次检测拖到几分钟。
+// The managed copy is our own download of the official build (PyInstaller, slowest measured first run 12.4s),
+// so it gets a generous budget; system copies are usually 0.2s zipapps, so give up fast when stuck —
+// the candidate list can hold a dozen paths, and 15s each would drag one detection out for minutes.
 func probeToolCandidate(ctx context.Context, kind Kind, c candidate) (probe.Info, error) {
 	if _, err := os.Stat(c.Path); err != nil {
 		return probe.Info{Path: c.Path}, err
@@ -532,14 +534,14 @@ func probeToolCandidate(ctx context.Context, kind Kind, c candidate) (probe.Info
 	return probe.RunWithTimeout(ctx, string(kind), c.Path, timeout)
 }
 
-// ===== PATH 解析 =====
+// ===== PATH resolution =====
 
 var (
 	shellPathsOnce sync.Once
 	shellPaths     []string
 )
 
-// systemDirs 返回登录 shell 的 PATH、当前 PATH 与各平台常见安装目录
+// systemDirs returns the login shell's PATH, the current PATH, and common install dirs per platform
 func systemDirs() []string {
 	dirs := filepath.SplitList(livePath())
 	dirs = append(dirs, commonInstallDirs()...)
@@ -547,7 +549,7 @@ func systemDirs() []string {
 	filtered := make([]string, 0, len(dirs))
 	for _, d := range dirs {
 		d = strings.TrimSpace(d)
-		// 打包应用会把自身目录塞进 PATH，需排除以免误判
+		// A packaged app puts its own dir into PATH — exclude it to avoid false hits
 		if d == "" || strings.Contains(d, "app.asar") {
 			continue
 		}
@@ -556,10 +558,10 @@ func systemDirs() []string {
 	return filtered
 }
 
-// livePath 合并当前进程 PATH 与登录 shell 的 PATH。
+// livePath merges the current process PATH with the login shell's PATH.
 //
-// macOS / Linux 上从 Finder 或桌面启动的 GUI 应用只有精简 PATH
-// （不含 /opt/homebrew/bin、~/.local/bin 等），所以补一次登录 shell 的输出。
+// GUI apps launched from Finder/desktop on macOS/Linux only get a trimmed PATH
+// (missing /opt/homebrew/bin, ~/.local/bin, etc.), so supplement it with the login shell's output.
 func livePath() string {
 	current := os.Getenv("PATH")
 	if runtime.GOOS != "windows" {
@@ -576,7 +578,7 @@ func loginShellPath() []string {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	// -l 加载用户 rc 文件；超时后放弃，不阻塞探测
+	// -l loads the user's rc files; give up on timeout instead of blocking detection
 	out, err := outputWithTimeout(exec.Command(shell, "-l", "-c", `printf %s "$PATH"`), 3*time.Second)
 	if err != nil {
 		return nil
@@ -584,10 +586,10 @@ func loginShellPath() []string {
 	return filepath.SplitList(strings.TrimSpace(string(out)))
 }
 
-// expandWindowsGlobs 展开 WinGet\Packages 下的通配路径。
+// expandWindowsGlobs expands wildcard paths under WinGet\Packages.
 //
-// 那里的目录名带随机哈希（yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe），
-// 无法写死，只能列出来再按前缀匹配。
+// Dir names there carry random hashes (yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe),
+// so they can't be hard-coded — list and match by prefix instead.
 func expandWindowsGlobs(base string, patterns []string) []string {
 	var out []string
 	for _, pattern := range patterns {
@@ -621,7 +623,7 @@ func commonInstallDirs() []string {
 			"/snap/bin",
 			"/var/lib/flatpak/exports/bin",
 			"/usr/lib/yt-dlp/bin", "/usr/local/lib/yt-dlp/bin",
-			"/app/bin", // Flatpak 沙箱内
+			"/app/bin", // inside the Flatpak sandbox
 		}
 	case "windows":
 		dirs = windowsInstallDirs(home)
@@ -634,18 +636,18 @@ func commonInstallDirs() []string {
 	return dirs
 }
 
-// windowsInstallDirs 返回 Windows 上的候选目录。
+// windowsInstallDirs returns candidate dirs on Windows.
 //
-// 抽成接受 home 的纯函数，是为了能**在 macOS 上测试 Windows 的路径**——
-// 直接读 os.UserHomeDir 的话，本地跑只能看到 macOS 的路径，等于没测
-// （平台键那个 bug 就是这么漏过去的）。
+// Factored as a pure function taking home so Windows paths can be tested ON MACOS —
+// reading os.UserHomeDir directly would only ever show macOS paths locally, i.e. untested
+// (that's exactly how the platform-key bug slipped through).
 func windowsInstallDirs(home string) []string {
-	// winget 的几种落点（查 winget 清单 + 实际安装结果得出，不是猜的）：
-	//   - WinGet\Links：portable 包（yt-dlp.yt-dlp）把 exe 软链到这里
-	//   - WinGet\Packages：真正解压出来的目录，层级带包名与随机哈希
-	//   - yt-dlp.FFmpeg 是 zip + nested portable，解压后为
+	// winget's landing spots (from the winget manifest + actual install results, not guessed):
+	//   - WinGet\Links: portable packages (yt-dlp.yt-dlp) symlink the exe here
+	//   - WinGet\Packages: the actually-extracted dir, with package name + random hash in the path
+	//   - yt-dlp.FFmpeg is zip + nested portable, extracting to
 	//     <hash>\ffmpeg-N-xxxx-win64-gpl\bin\{ffmpeg,ffprobe}.exe
-	//   - DenoLand.Deno 提供 JS 运行时（yt-dlp 的清单把它列为依赖）
+	//   - DenoLand.Deno provides the JS runtime (yt-dlp's manifest lists it as a dependency)
 	local := envDir("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	programFiles := envDir("ProgramFiles", `C:\Program Files`)
 	programData := envDir("ProgramData", `C:\ProgramData`)
@@ -653,8 +655,8 @@ func windowsInstallDirs(home string) []string {
 	scoopGlobal := envDir("SCOOP_GLOBAL", filepath.Join(programData, "scoop"))
 	wingetBase := filepath.Join(local, "Microsoft", "WinGet")
 
-	// winget 有**两套**落点：用户级与机器级（`--scope machine`）。
-	// 只覆盖用户级会让"用管理员装"的用户被判为缺失。
+	// winget has TWO landing spots: user-level and machine-level (`--scope machine`).
+	// Covering only user-level would report "installed as admin" users as missing.
 	machineBase := filepath.Join(programFiles, "WinGet")
 
 	dirs := []string{
@@ -669,14 +671,14 @@ func windowsInstallDirs(home string) []string {
 		filepath.Join(scoopGlobal, "shims"),
 		filepath.Join(scoopGlobal, "apps", "yt-dlp", "current"),
 		filepath.Join(scoopGlobal, "apps", "ffmpeg", "current", "bin"),
-		// 用户级 winget
+		// user-level winget
 		filepath.Join(wingetBase, "Links"),
-		// 机器级 winget（--scope machine）
+		// machine-level winget (--scope machine)
 		filepath.Join(machineBase, "Links"),
 		filepath.Join(local, "Microsoft", "WindowsApps"),
 	}
 
-	// Packages 下的目录名含随机哈希，只能展开通配；用户级与机器级都要展开
+	// Dir names under Packages contain random hashes — expand wildcards; both user and machine level
 	dirs = append(dirs, expandWindowsGlobs(wingetBase, WindowsPackagePatterns)...)
 	dirs = append(dirs, expandWindowsGlobs(machineBase, WindowsPackagePatterns)...)
 
@@ -690,26 +692,26 @@ func envDir(key, fallback string) string {
 	return fallback
 }
 
-// WindowsPackagePatterns 是 WinGet\Packages 下需要展开的通配模式。
+// WindowsPackagePatterns are the wildcard patterns to expand under WinGet\Packages.
 //
-// 用 filepath.Join 拼接而不是写死反斜杠，有两个好处：
-//  1. 在 Windows 上得到正确的 `\` 分隔（filepath.Glob 用宿主分隔符匹配）
-//  2. 在 macOS 上得到 `/`，于是可以用一个仿造的目录树**真正验证展开逻辑**
-//     ——写死反斜杠时本地只能看到"展开结果为空"，等于没测
+// Joining with filepath.Join instead of hard-coding backslashes has two benefits:
+//  1. correct `\` separators on Windows (filepath.Glob matches with the host separator)
+//  2. `/` on macOS, so a fake dir tree can GENUINELY verify the expansion logic
+//     — with hard-coded backslashes, local runs only ever saw "empty expansion", i.e. untested
 var WindowsPackagePatterns = []string{
-	// yt-dlp.yt-dlp 是 portable 包，解压后的 exe 直接在包目录下
+	// yt-dlp.yt-dlp is a portable package; the extracted exe sits directly in the package dir
 	filepath.Join("Packages", "yt-dlp.yt-dlp_*"),
-	// yt-dlp.FFmpeg 是 zip + nested portable，多一层解压目录与 bin
+	// yt-dlp.FFmpeg is zip + nested portable, with one more extract dir + bin layer
 	filepath.Join("Packages", "yt-dlp.FFmpeg_*"),
 	filepath.Join("Packages", "yt-dlp.FFmpeg_*", "*", "bin"),
-	// DenoLand.Deno 提供 JS 运行时（yt-dlp 的清单把它列为依赖）
+	// DenoLand.Deno provides the JS runtime (yt-dlp's manifest lists it as a dependency)
 	filepath.Join("Packages", "DenoLand.Deno_*"),
-	// 用户直接装 Gyan.FFmpeg 的情况
+	// the case where the user installed Gyan.FFmpeg directly
 	filepath.Join("Packages", "Gyan.FFmpeg_*"),
 	filepath.Join("Packages", "Gyan.FFmpeg_*", "*", "bin"),
 }
 
-// extraDirs 跨平台都适用的用户级目录
+// extraDirs are user-level dirs that apply cross-platform
 func extraDirs(home string) []string {
 	if home == "" {
 		return nil
