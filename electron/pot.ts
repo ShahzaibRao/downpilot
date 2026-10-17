@@ -49,6 +49,8 @@ function copyDir(src: string, dest: string): void {
 export class PotManager {
   private proc: ChildProcess | null = null
   private starting: Promise<boolean> | null = null
+  /** Did WE start the current server (vs reusing an external one)? */
+  private weStartedIt = false
 
   constructor(
     /** Vendored server source dir (repo in dev, resources in prod). */
@@ -74,6 +76,11 @@ export class PotManager {
     }
   }
 
+  /** Did we start the server currently on :4416 (false = external/reused)? */
+  isOurs(): boolean {
+    return this.weStartedIt && this.proc !== null
+  }
+
   /**
    * Ensure a POT server is reachable. Starts ours if the port is free.
    * Returns true when yt-dlp should load the POT plugin.
@@ -83,6 +90,7 @@ export class PotManager {
     const v = await ping()
     if (v) {
       this.log(`[pot] server already up on :${POT_PORT} (v${v}) — reusing`)
+      // weStartedIt stays as-is: true only if WE spawned the proc
       return true
     }
     // single-flight start
@@ -99,6 +107,7 @@ export class PotManager {
       killTree(this.proc)
       this.proc = null
     }
+    this.weStartedIt = false
     this.starting = null
   }
 
@@ -138,6 +147,7 @@ export class PotManager {
       if (this.proc === proc) this.proc = null
     })
     this.proc = proc
+    this.weStartedIt = true
 
     // wait for /ping (server needs a few seconds: npm deps load, etc.)
     for (let i = 0; i < 30; i++) {
@@ -149,6 +159,7 @@ export class PotManager {
       }
       if (this.proc === null) {
         this.log('[pot] server exited during startup')
+        this.weStartedIt = false
         return false
       }
     }
