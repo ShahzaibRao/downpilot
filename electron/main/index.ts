@@ -417,6 +417,7 @@ ipcMain.handle('pot:status', async () => {
     denoPath: tools.deno ?? null,
     filesReady: pm.filesReady(),
     running,
+    isOurs: pm.isOurs(),
     version,
     port: 4416
   }
