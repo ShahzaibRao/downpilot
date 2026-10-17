@@ -313,7 +313,7 @@ export class ProspectScheduler {
     const results: CheckResult[] = []
     try {
       for (const p of due) {
-        const r = await this.checkOne(p.id)
+        const r = await this.doCheckOne(p.id)
         if (r) results.push(r)
       }
     } finally {
@@ -333,7 +333,7 @@ export class ProspectScheduler {
       const prospects = store.list().filter((p) => p.status === 'ok')
       log(`checkAll: ${prospects.length} prospect(s) to check`)
       for (const p of prospects) {
-        const r = await this.checkOne(p.id)
+        const r = await this.doCheckOne(p.id)
         if (r) results.push(r)
       }
     } finally {
@@ -343,8 +343,22 @@ export class ProspectScheduler {
     return results
   }
 
-  /** Check a single prospect (per-prospect "Check" button). */
+  /** Check a single prospect (per-prospect "Check" button). Skips if a check is already running. */
   async checkOne(prospectId: string): Promise<CheckResult | null> {
+    if (this.running) {
+      log(`checkOne ${prospectId}: skipped (another check running)`)
+      return null
+    }
+    this.running = true
+    try {
+      return await this.doCheckOne(prospectId)
+    } finally {
+      this.running = false
+    }
+  }
+
+  /** Internal single-prospect check (lock must be held by caller). */
+  private async doCheckOne(prospectId: string): Promise<CheckResult | null> {
     const store = this.deps.getStore()
     const p = store.get(prospectId)
     if (!p) return null
