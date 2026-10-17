@@ -14,7 +14,7 @@ export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
  * ffmpeg alive, which finishes the merge in the background. That's the
  * "paused but the video still arrived" bug.
  */
-function killTree(proc: ChildProcess | null): void {
+export function killTree(proc: ChildProcess | null): void {
   if (!proc || !proc.pid) {
     console.log('[killTree] no process to kill (already gone)')
     return
@@ -101,6 +101,8 @@ export interface DownloadOptions {
   playlistItems?: number[]
   /** Netscape-format cookies file (per-platform profile), if any. */
   cookiesFile?: string
+  /** Extra yt-dlp plugin dirs (POT provider for YouTube). */
+  pluginDirs?: string
 }
 
 export type DlStatus = 'downloading' | 'merging' | 'done' | 'error'
@@ -160,6 +162,7 @@ export class YtDlpJob {
       outTemplate,
       ...this.scopeArgs(),
       ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
+      ...(this.opts.pluginDirs ? ['--plugin-dirs', this.opts.pluginDirs] : []),
       this.opts.url
     ]
 
@@ -394,6 +397,19 @@ export interface CookieHooks {
   markExpired: (platform: string) => void
 }
 
+export interface PotHooks {
+  /**
+   * Ensure the POT server is running for a YouTube download.
+   * Returns the plugin dir for yt-dlp --plugin-dirs, or null to skip.
+   */
+  ensureForYoutube: () => Promise<string | null>
+}
+
+/** youtube.com / youtu.be URLs need the POT server. */
+export function isYoutubeUrl(rawUrl: string): boolean {
+  return /youtube\.com|youtu\.be/i.test(rawUrl)
+}
+
 function blankEvent(id: string): ProgressEvent {
   return {
     id,
@@ -467,7 +483,8 @@ export class DownloadJob {
     private tools: Tools,
     private onEvent: (e: ProgressEvent) => void,
     private scopeOpts: ScopeOpts = defaultScopeOpts(),
-    private cookies: CookieHooks | null = null
+    private cookies: CookieHooks | null = null,
+    private pot: PotHooks | null = null
   ) {}
 
   start(): void {
@@ -523,6 +540,17 @@ export class DownloadJob {
         next()
         return
       }
+      // YouTube → POT server (Proof-of-Origin tokens for bot checks).
+      // The bgutil:http provider defaults to 127.0.0.1:4416, so no
+      // extractor args are needed — just load the plugin.
+      let pluginDirs: string | null = null
+      if (isYoutubeUrl(this.url) && this.pot) {
+        try {
+          pluginDirs = await this.pot.ensureForYoutube()
+        } catch {
+          pluginDirs = null
+        }
+      }
       // Popular order needs the two-pass: resolve indices first.
       // Content filter (YouTube channel → /videos or /shorts tab).
       const effectiveUrl =
@@ -549,7 +577,8 @@ export class DownloadJob {
           ffmpegDir: this.tools.ffmpegDir,
           scopeOpts: this.scopeOpts,
           playlistItems,
-          ...(cookiesFile ? { cookiesFile } : {})
+          ...(cookiesFile ? { cookiesFile } : {}),
+          ...(pluginDirs ? { pluginDirs } : {})
         },
         sink
       )
