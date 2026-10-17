@@ -8,7 +8,7 @@ import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
 import { CookieVault, platformForUrl } from '../cookies'
 import { PotManager } from '../pot'
-import { activeProxy, buildProxyUrl, testProxy, testSite } from '../smartmode'
+import { ProxyRotator, buildProxyUrl, selectedProxies, testProxy, testSite } from '../smartmode'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -178,6 +178,7 @@ let queue: QueueManager | null = null
 let history: HistoryStore | null = null
 let cookieVault: CookieVault | null = null
 let potManager: PotManager | null = null
+const proxyRotator = new ProxyRotator()
 
 /** Vendored POT server source: repo in dev, app resources in prod. */
 function potSourceDir(): string {
@@ -247,11 +248,14 @@ function getQueue(): QueueManager {
           return ok ? getPotManager().pluginDir() : null
         }
       },
-      () => {
-        try {
-          return getSettings().smartMode ?? null
-        } catch {
-          return null
+      {
+        // Smart Mode: round-robin across the user's selected proxies.
+        getProxyUrl: (url: string) => {
+          try {
+            return proxyRotator.nextFor(url, getSettings().smartMode)
+          } catch {
+            return null
+          }
         }
       }
     )
@@ -356,26 +360,37 @@ ipcMain.handle('cookies:test', async (_event, opts: { platform: string; testUrl:
 
 // ---- IPC: Smart Mode proxy tests (Phase 2c) ----
 
-function requireActiveProxyUrl(): string {
+/** Selected proxies with usable URLs. Throws if none. */
+function requireSelectedProxies(): Array<{ id: string; name: string; url: string }> {
   const cfg = getSettings().smartMode
-  const proxy = activeProxy(cfg)
-  if (!proxy) throw new Error('Select a proxy first (add one and click "Use")')
-  const proxyUrl = buildProxyUrl(proxy)
-  if (!proxyUrl) throw new Error('The selected proxy has no host — edit it and save')
-  return proxyUrl
+  const selected = selectedProxies(cfg)
+  if (selected.length === 0) throw new Error('Select at least one proxy for rotation (tick the checkboxes)')
+  const usable = []
+  for (const p of selected) {
+    // don't log the URL — it contains credentials
+    const url = buildProxyUrl(p)
+    if (url) usable.push({ id: p.id, name: p.name || 'Unnamed', url })
+  }
+  if (usable.length === 0) throw new Error('Selected proxies have no host — edit and save them')
+  return usable
 }
 
 ipcMain.handle('proxy:test', async () => {
-  // don't log the URL — it contains credentials
-  const result = await testProxy(requireActiveProxyUrl())
-  if (!result.ok) throw new Error(result.error ?? 'Proxy test failed')
-  return result
+  const results = []
+  for (const p of requireSelectedProxies()) {
+    const r = await testProxy(p.url)
+    results.push({ id: p.id, name: p.name, ok: r.ok, ip: r.ip, error: r.error })
+  }
+  return results
 })
 
 ipcMain.handle('proxy:testSite', async (_event, siteUrl: string) => {
-  const result = await testSite(requireActiveProxyUrl(), siteUrl)
-  if (!result.ok) throw new Error(result.error ?? 'Site test failed')
-  return result
+  const results = []
+  for (const p of requireSelectedProxies()) {
+    const r = await testSite(p.url, siteUrl)
+    results.push({ id: p.id, name: p.name, ok: r.ok, status: r.status, error: r.error })
+  }
+  return results
 })
 
 // ---- IPC: POT server status (Phase 2b, surfaced in Settings) ----
@@ -400,6 +415,7 @@ ipcMain.handle('pot:status', async () => {
   }
   return {
     denoPath: tools.deno ?? null,
+    filesReady: pm.filesReady(),
     running,
     version,
     port: 4416
