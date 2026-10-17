@@ -133,7 +133,8 @@
           <span v-else class="badge">stopped</span>
           <span class="spacer"></span>
           <button v-if="!potRunning" class="btn secondary small" :disabled="potBusy || !potDeno" @click="doPotStart">Start</button>
-          <button v-else class="btn secondary small" :disabled="potBusy" @click="doPotStop">Stop</button>
+          <button v-else-if="potIsOurs" class="btn secondary small" :disabled="potBusy" @click="doPotStop">Stop</button>
+          <button v-else class="btn secondary small" :disabled="potBusy" @click="doPotForceStop" title="Kill the external process on :4416">Force stop</button>
           <button class="btn secondary small" :disabled="potBusy" @click="loadPotStatus">Refresh</button>
         </div>
       </div>
@@ -550,6 +551,20 @@ async function loadPotStatus() {
     potPort.value = s.port
   } catch (e) {
     potMsg.value = `Status check failed: ${(e as Error).message}`
+  }
+}
+
+async function doPotForceStop() {
+  potBusy.value = true
+  potMsg.value = 'Force-stopping external server…'
+  try {
+    await window.dpApi.potForceStop()
+    potMsg.value = 'External server stopped — port :4416 is free. You can Start now.'
+  } catch (e) {
+    potMsg.value = `Force stop failed: ${(e as Error).message}`
+  } finally {
+    potBusy.value = false
+    loadPotStatus()
   }
 }
 
