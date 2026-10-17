@@ -251,7 +251,7 @@ export class QueueManager {
       task.quality,
       tools,
       (e: ProgressEvent) => this.onJobEvent(task.id, e),
-      { scope: task.scope, maxItems: task.maxItems, order: task.order }
+      { scope: task.scope, maxItems: task.maxItems, order: task.order, content: task.content ?? 'all' }
     )
     this.jobs.set(task.id, job)
     job.start()
@@ -291,6 +291,11 @@ export class QueueManager {
         if (!t.id || !t.url) continue
         // anything left 'running' died with the process → re-queue
         if (t.status === 'running') t.status = 'queued'
+        // backfill fields added after the task was saved
+        if (!t.scope) t.scope = 'single'
+        if (typeof t.maxItems !== 'number') t.maxItems = 50
+        if (!t.order) t.order = 'latest'
+        if (!t.content) t.content = 'all'
         this.tasks.set(t.id, t)
       }
     } catch {
