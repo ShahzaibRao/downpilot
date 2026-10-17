@@ -31,12 +31,17 @@
       <div v-if="smartEnabled">
         <!-- saved proxies -->
         <div v-if="proxies.length > 0" class="preview" style="margin-bottom: 10px;">
+          <div class="muted" style="font-size: 12px; margin-bottom: 4px;">
+            Tick proxies to include in rotation — downloads round-robin across them.
+          </div>
           <div v-for="p in proxies" :key="p.id" class="preview-row">
+            <label class="muted chk" style="cursor: pointer;">
+              <input type="checkbox" :checked="selectedProxyIds.includes(p.id)" @change="toggleProxySelected(p.id)" />
+            </label>
             <strong>{{ p.name || 'Unnamed' }}</strong>
             <span class="muted">{{ p.protocol }}://{{ p.host }}:{{ p.port }}</span>
-            <span v-if="p.id === activeProxyId" class="badge ok">active</span>
+            <span v-if="selectedProxyIds.includes(p.id)" class="badge ok">in rotation</span>
             <span class="spacer"></span>
-            <button v-if="p.id !== activeProxyId" class="btn secondary small" @click="useProxy(p.id)">Use</button>
             <button class="btn secondary small" @click="editProxy(p)">Edit</button>
             <button class="btn secondary small" @click="deleteProxy(p.id)">Delete</button>
           </div>
@@ -82,13 +87,21 @@
 
         <!-- tests -->
         <div class="row" style="margin-bottom: 8px; align-items: center;">
-          <button class="btn secondary" :disabled="proxyBusy || !activeProxyId" @click="doProxyTest">
-            {{ proxyBusy ? 'Testing…' : 'Test proxy' }}
+          <button class="btn secondary" :disabled="proxyBusy || selectedProxyIds.length === 0" @click="doProxyTest">
+            {{ proxyBusy ? 'Testing…' : `Test ${selectedProxyIds.length || ''} prox${selectedProxyIds.length === 1 ? 'y' : 'ies'}` }}
           </button>
           <input v-model="siteTestUrl" class="url-input" placeholder="Site URL to test (e.g. https://www.tiktok.com)" />
-          <button class="btn secondary" :disabled="proxyBusy || !activeProxyId || !siteTestUrl.trim()" @click="doSiteTest">
+          <button class="btn secondary" :disabled="proxyBusy || selectedProxyIds.length === 0 || !siteTestUrl.trim()" @click="doSiteTest">
             Test site
           </button>
+        </div>
+        <div v-if="proxyResults.length > 0" class="preview" style="margin-bottom: 8px;">
+          <div v-for="r in proxyResults" :key="r.id" class="preview-row">
+            <strong>{{ r.name }}</strong>
+            <span v-if="r.ok" class="badge ok">works{{ r.ip ? ' — ' + r.ip : '' }}{{ r.status ? ' (HTTP ' + r.status + ')' : '' }}</span>
+            <span v-else class="badge err">failed</span>
+            <span v-if="!r.ok" class="muted" style="font-size: 12px;">{{ r.error }}</span>
+          </div>
         </div>
         <div v-if="proxyMsg" class="muted" style="font-size: 13px;">{{ proxyMsg }}</div>
       </div>
@@ -106,6 +119,12 @@
           <span v-if="potDeno" class="badge ok">installed</span>
           <span v-else class="badge err">missing</span>
           <span class="muted" style="font-size: 12px;">{{ potDeno ? '' : 'get it from Runtime dependencies' }}</span>
+        </div>
+        <div class="preview-row">
+          <span>Server files</span>
+          <span v-if="potFilesReady" class="badge ok">ready</span>
+          <span v-else class="badge">not set up</span>
+          <span class="muted" style="font-size: 12px;">{{ potFilesReady ? '' : 'set up on first start' }}</span>
         </div>
         <div class="preview-row">
           <span>Server</span>
@@ -189,7 +208,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import DepRow from '../components/DepRow.vue'
-import type { DepResult, DepsProgressEvent, CookieProfileMeta, SmartModeConfig, ProxyEntry, ProxyProtocol, PotStatus } from '../types'
+import type { DepResult, DepsProgressEvent, CookieProfileMeta, SmartModeConfig, ProxyEntry, ProxyProtocol, PotStatus, ProxyTestItemResult } from '../types'
 
 const deps = ref<DepResult[]>([])
 const loading = ref(true)
@@ -325,7 +344,7 @@ let cookiesUnsubscribe: (() => void) | null = null
 const smartPlatforms = ['youtube', 'tiktok', 'x', 'instagram', 'snapchat', 'pinterest']
 const smartEnabled = ref(false)
 const proxies = ref<ProxyEntry[]>([])
-const activeProxyId = ref<string | null>(null)
+const selectedProxyIds = ref<string[]>([])
 const smartPlatformsChecked = ref<string[]>(['all'])
 // proxy form
 const proxyName = ref('')
@@ -338,6 +357,7 @@ const editingProxyId = ref<string | null>(null)
 const proxyFormMsg = ref('')
 const proxyBusy = ref(false)
 const proxyMsg = ref('')
+const proxyResults = ref<ProxyTestItemResult[]>([])
 const siteTestUrl = ref('')
 
 const allPlatforms = computed(() => smartPlatformsChecked.value.includes('all'))
@@ -349,10 +369,10 @@ function newProxyId(): string {
 async function loadSmart() {
   try {
     const s = await window.dpApi.getSettings()
-    const sm: SmartModeConfig = s.smartMode ?? { enabled: false, proxies: [], activeProxyId: null, platforms: ['all'] }
+    const sm: SmartModeConfig = s.smartMode ?? { enabled: false, proxies: [], selectedProxyIds: [], platforms: ['all'] }
     smartEnabled.value = sm.enabled
     proxies.value = sm.proxies ?? []
-    activeProxyId.value = sm.activeProxyId ?? null
+    selectedProxyIds.value = sm.selectedProxyIds ?? []
     smartPlatformsChecked.value = sm.platforms?.length ? sm.platforms : ['all']
   } catch { /* ignore */ }
 }
@@ -365,7 +385,7 @@ async function persistSmart(): Promise<void> {
     smartMode: {
       enabled: smartEnabled.value,
       proxies: plainProxies,
-      activeProxyId: activeProxyId.value,
+      selectedProxyIds: [...selectedProxyIds.value],
       platforms: [...smartPlatformsChecked.value]
     }
   })
@@ -418,8 +438,8 @@ async function saveProxy() {
         password: proxyPass.value
       }
       proxies.value = [...proxies.value, entry]
-      // first proxy becomes active automatically
-      if (!activeProxyId.value) activeProxyId.value = entry.id
+      // newly added proxy joins the rotation pool automatically
+      selectedProxyIds.value = [...selectedProxyIds.value, entry.id]
       proxyFormMsg.value = 'Proxy saved ✓'
     }
     await persistSmart()
@@ -446,17 +466,19 @@ function cancelEditProxy() {
 
 async function deleteProxy(id: string) {
   proxies.value = proxies.value.filter((p) => p.id !== id)
-  if (activeProxyId.value === id) {
-    activeProxyId.value = proxies.value.length ? proxies.value[0].id : null
-  }
+  selectedProxyIds.value = selectedProxyIds.value.filter((x) => x !== id)
   if (editingProxyId.value === id) clearProxyForm()
   await saveSmart()
 }
 
-async function useProxy(id: string) {
-  activeProxyId.value = id
-  proxyMsg.value = ''
-  await saveSmart()
+function toggleProxySelected(id: string) {
+  if (selectedProxyIds.value.includes(id)) {
+    selectedProxyIds.value = selectedProxyIds.value.filter((x) => x !== id)
+  } else {
+    selectedProxyIds.value = [...selectedProxyIds.value, id]
+  }
+  proxyResults.value = []
+  saveSmart()
 }
 
 function togglePlatform(p: string) {
@@ -475,11 +497,14 @@ function toggleAllPlatforms() {
 async function doProxyTest() {
   proxyBusy.value = true
   proxyMsg.value = ''
+  proxyResults.value = []
   try {
-    const r = await window.dpApi.proxyTest()
-    proxyMsg.value = `Proxy works ✓ — exit IP: ${r.ip}`
+    const results = await window.dpApi.proxyTest()
+    proxyResults.value = results
+    const okCount = results.filter((r) => r.ok).length
+    proxyMsg.value = `${okCount}/${results.length} proxies work`
   } catch (e) {
-    proxyMsg.value = `Proxy failed: ${(e as Error).message}`
+    proxyMsg.value = `Proxy test: ${(e as Error).message}`
   } finally {
     proxyBusy.value = false
   }
@@ -488,9 +513,12 @@ async function doProxyTest() {
 async function doSiteTest() {
   proxyBusy.value = true
   proxyMsg.value = ''
+  proxyResults.value = []
   try {
-    const r = await window.dpApi.proxyTestSite(siteTestUrl.value)
-    proxyMsg.value = `Site reachable via proxy ✓ (HTTP ${r.status}) — not blocked`
+    const results = await window.dpApi.proxyTestSite(siteTestUrl.value)
+    proxyResults.value = results
+    const okCount = results.filter((r) => r.ok).length
+    proxyMsg.value = `${okCount}/${results.length} proxies can reach the site`
   } catch (e) {
     proxyMsg.value = `Site test: ${(e as Error).message}`
   } finally {
@@ -501,6 +529,7 @@ async function doSiteTest() {
 // ---- POT server status (Phase 2b panel) ----
 
 const potDeno = ref(false)
+const potFilesReady = ref(false)
 const potRunning = ref(false)
 const potVersion = ref<string | null>(null)
 const potPort = ref(4416)
@@ -512,6 +541,7 @@ async function loadPotStatus() {
   try {
     const s: PotStatus = await window.dpApi.potStatus()
     potDeno.value = !!s.denoPath
+    potFilesReady.value = s.filesReady
     potRunning.value = s.running
     potVersion.value = s.version
     potPort.value = s.port
