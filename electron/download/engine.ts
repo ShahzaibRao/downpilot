@@ -18,17 +18,29 @@ function killTree(proc: ChildProcess | null): void {
   }
   const pid = proc.pid
   console.log(`[killTree] killing process tree, pid=${pid}`)
-  try {
-    proc.kill()
-  } catch {
-    /* already dead */
-  }
   if (process.platform === 'win32') {
-    // /T = the whole tree, /F = force.
+    // taskkill FIRST: /T kills the whole tree (yt-dlp + its ffmpeg child).
+    // It must run before proc.kill() — once the parent is dead, taskkill
+    // can't find the pid and the children survive (that's the bug this
+    // ordering fixes).
     execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (err) => {
-      console.log(`[killTree] taskkill ${err ? 'FAILED: ' + err.message : 'OK'} (pid=${pid})`)
+      if (err) {
+        console.log(`[killTree] taskkill FAILED: ${err.message} — falling back to proc.kill()`)
+        try {
+          proc.kill()
+        } catch {
+          /* already dead */
+        }
+      } else {
+        console.log(`[killTree] taskkill OK (pid=${pid})`)
+      }
     })
   } else {
+    try {
+      proc.kill()
+    } catch {
+      /* already dead */
+    }
     try {
       process.kill(-pid, 'SIGKILL') // whole process group (needs detached: true at spawn)
       console.log(`[killTree] process group SIGKILL sent (pid=${pid})`)
