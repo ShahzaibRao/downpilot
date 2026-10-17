@@ -1,5 +1,8 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
+import { promisify } from 'node:util'
 import path from 'node:path'
+
+const execFileAsync = promisify(execFile)
 
 export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
 
@@ -50,6 +53,20 @@ function killTree(proc: ChildProcess | null): void {
   }
 }
 
+export type Scope = 'single' | 'playlist' | 'channel'
+export type Order = 'latest' | 'oldest' | 'popular'
+
+export interface ScopeOpts {
+  scope: Scope
+  /** Max items for playlist/channel (default 50). */
+  maxItems: number
+  order: Order
+}
+
+export function defaultScopeOpts(): ScopeOpts {
+  return { scope: 'single', maxItems: 50, order: 'latest' }
+}
+
 export interface DownloadOptions {
   url: string
   outDir: string
@@ -57,6 +74,9 @@ export interface DownloadOptions {
   ytdlpPath: string
   /** Directory containing ffmpeg/ffprobe (yt-dlp wants a dir, not the exe). */
   ffmpegDir: string
+  scopeOpts: ScopeOpts
+  /** Resolved playlist indices for order='popular' (two-pass). */
+  playlistItems?: number[]
 }
 
 export type DlStatus = 'downloading' | 'merging' | 'done' | 'error'
@@ -103,7 +123,6 @@ export class YtDlpJob {
   start(): void {
     const outTemplate = path.join(this.opts.outDir, '%(title).200B [%(id)s].%(ext)s')
     const args = [
-      '--no-playlist',
       '-f',
       QUALITY_FORMATS[this.opts.quality],
       '--merge-output-format',
@@ -115,6 +134,7 @@ export class YtDlpJob {
       '[dpdl]%(progress._percent_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed_str)s|%(progress.eta_str)s',
       '-o',
       outTemplate,
+      ...this.scopeArgs(),
       this.opts.url
     ]
 
@@ -155,6 +175,24 @@ export class YtDlpJob {
 
   cancel(): void {
     killTree(this.proc)
+  }
+
+  /** Playlist/channel scope → yt-dlp playlist flags. */
+  private scopeArgs(): string[] {
+    const { scope, maxItems, order, playlistItems } = {
+      ...this.opts.scopeOpts,
+      playlistItems: this.opts.playlistItems
+    }
+    if (scope === 'single') return ['--no-playlist']
+    const args = ['--yes-playlist']
+    if (order === 'popular' && playlistItems && playlistItems.length > 0) {
+      // two-pass already resolved the most-viewed indices
+      args.push('--playlist-items', playlistItems.join(','))
+    } else {
+      args.push('--playlist-end', String(Math.max(1, maxItems)))
+      if (order === 'oldest') args.push('--playlist-reverse')
+    }
+    return args
   }
 
   private handleLine(line: string): void {
@@ -211,6 +249,8 @@ export interface GalleryDlOptions {
   url: string
   outDir: string
   gallerydlPath: string
+  /** Bound on files per job (safety for profile/album URLs). */
+  maxItems: number
 }
 
 /**
@@ -231,7 +271,13 @@ export class GalleryDlJob {
   ) {}
 
   start(): void {
-    const args = ['-d', this.opts.outDir, this.opts.url]
+    const args = [
+      '-d',
+      this.opts.outDir,
+      '--range',
+      `1-${Math.max(1, this.opts.maxItems)}`,
+      this.opts.url
+    ]
     this.proc = spawn(this.opts.gallerydlPath, args, {
       windowsHide: true,
       detached: process.platform !== 'win32',
@@ -327,6 +373,47 @@ function blankEvent(id: string): ProgressEvent {
 }
 
 /**
+ * Two-pass "popular" ordering: flat-dump the playlist/channel (up to 200
+ * items — fast, no downloads), sort by view count, return the playlist
+ * indices of the top `limit`. The caller passes them as --playlist-items.
+ * Returns undefined when the dump fails → caller falls back to latest.
+ */
+export async function resolvePopularIndices(
+  ytdlpPath: string,
+  url: string,
+  limit: number
+): Promise<number[] | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      ytdlpPath,
+      [
+        '--flat-playlist',
+        '--no-warnings',
+        '--print',
+        '%(playlist_index)s|%(view_count)s',
+        '--playlist-end',
+        '200',
+        url
+      ],
+      { timeout: 180_000, maxBuffer: 10 * 1024 * 1024 }
+    )
+    const items = stdout
+      .split('\n')
+      .map((l) => l.trim().match(/^(\d+)\|(\d+|NA|None)/))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => ({
+        index: parseInt(m[1], 10),
+        views: m[2] === 'NA' || m[2] === 'None' ? 0 : parseInt(m[2], 10)
+      }))
+    if (items.length === 0) return undefined
+    items.sort((a, b) => b.views - a.views)
+    return items.slice(0, Math.max(1, limit)).map((i) => i.index)
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * One logical download: picks the primary engine from the URL, runs it,
  * and falls back to the secondary engine on failure. If both fail, the
  * error carries both reasons (CreatorWatch rule).
@@ -342,7 +429,8 @@ export class DownloadJob {
     private outDir: string,
     private quality: Quality,
     private tools: Tools,
-    private onEvent: (e: ProgressEvent) => void
+    private onEvent: (e: ProgressEvent) => void,
+    private scopeOpts: ScopeOpts = defaultScopeOpts()
   ) {}
 
   start(): void {
@@ -355,7 +443,7 @@ export class DownloadJob {
     this.current?.cancel()
   }
 
-  private tryEngine(engine: Engine, next: () => void): void {
+  private async tryEngine(engine: Engine, next: () => void): Promise<void> {
     if (this.cancelled) return
     const label = engineLabel(engine)
     const bin = engine === 'ytdlp' ? this.tools.ytdlp : this.tools.gallerydl
@@ -382,15 +470,38 @@ export class DownloadJob {
         next()
         return
       }
+      // Popular order needs the two-pass: resolve indices first.
+      let playlistItems: number[] | undefined
+      if (this.scopeOpts.scope !== 'single' && this.scopeOpts.order === 'popular') {
+        this.onEvent({ ...blankEvent(this.id), engine: label, filename: 'Finding most popular videos…' })
+        playlistItems = await resolvePopularIndices(bin, this.url, this.scopeOpts.maxItems)
+        if (this.cancelled) return
+        if (!playlistItems) {
+          // dump failed → fall back to latest order rather than erroring
+          this.scopeOpts = { ...this.scopeOpts, order: 'latest' }
+        }
+      }
       const job = new YtDlpJob(
         this.id,
-        { url: this.url, outDir: this.outDir, quality: this.quality, ytdlpPath: bin, ffmpegDir: this.tools.ffmpegDir },
+        {
+          url: this.url,
+          outDir: this.outDir,
+          quality: this.quality,
+          ytdlpPath: bin,
+          ffmpegDir: this.tools.ffmpegDir,
+          scopeOpts: this.scopeOpts,
+          playlistItems
+        },
         sink
       )
       this.current = job
       job.start()
     } else {
-      const job = new GalleryDlJob(this.id, { url: this.url, outDir: this.outDir, gallerydlPath: bin }, sink)
+      const job = new GalleryDlJob(
+        this.id,
+        { url: this.url, outDir: this.outDir, gallerydlPath: bin, maxItems: this.scopeOpts.maxItems },
+        sink
+      )
       this.current = job
       job.start()
     }
