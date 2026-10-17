@@ -340,6 +340,8 @@ export class ProspectScheduler {
 /**
  * Clean up raw exec errors: strip the command line, keep the meaningful
  * ERROR line (e.g. "ERROR: [instagram:user] ...: Unable to extract data").
+ * For gallery-dl (which doesn't use "ERROR:" prefix), keep the last
+ * meaningful lines.
  */
 export function cleanError(raw: string): string {
   const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -353,7 +355,20 @@ export function cleanError(raw: string): string {
       return msg || 'Unknown error'
     }
   }
-  // fallback: first non-empty line, truncated
-  const first = lines[0] || 'Unknown error'
-  return first.length > 160 ? first.slice(0, 160) + '…' : first
+  // gallery-dl style: look for [extractor][error] or traceback tail
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]
+    // skip the "Command failed: ..." header line
+    if (/^command failed:/i.test(line)) continue
+    // gallery-dl error markers
+    if (/\[(error|warning)\]/i.test(line) || /error/i.test(line)) {
+      // strip long paths, keep it readable
+      let msg = line.replace(/[A-Z]:\\[^\s:]*/g, '<path>').replace(/\/[^\s:]*\/[^\s:]*/g, '<path>')
+      return msg.length > 200 ? msg.slice(0, 200) + '…' : msg
+    }
+  }
+  // fallback: last non-empty line (not the command), truncated
+  const meaningful = lines.filter((l) => !/^command failed:/i.test(l))
+  const last = meaningful[meaningful.length - 1] || lines[0] || 'Unknown error'
+  return last.length > 200 ? last.slice(0, 200) + '…' : last
 }
