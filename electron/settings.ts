@@ -19,8 +19,8 @@ export interface SmartModeConfig {
   enabled: boolean
   /** All saved proxies. */
   proxies: ProxyEntry[]
-  /** ID of the active proxy (null = none selected). */
-  activeProxyId: string | null
+  /** IDs of proxies in the rotation pool (round-robin). */
+  selectedProxyIds: string[]
   /** Platforms that use the proxy: subset of SMART_PLATFORMS, or ['all']. */
   platforms: string[]
 }
@@ -37,7 +37,7 @@ const defaults = (): Settings => ({
   smartMode: {
     enabled: false,
     proxies: [],
-    activeProxyId: null,
+    selectedProxyIds: [],
     platforms: ['all']
   }
 })
@@ -80,6 +80,17 @@ export function getSettings(): Settings {
       }
     }
     if (!Array.isArray(parsed.smartMode.proxies)) parsed.smartMode.proxies = []
+    // migrate activeProxyId (single) → selectedProxyIds (rotation pool)
+    const smm = parsed.smartMode as unknown as Record<string, unknown>
+    if ('activeProxyId' in smm && !('selectedProxyIds' in smm)) {
+      const oldId = smm.activeProxyId as string | null
+      parsed.smartMode.selectedProxyIds = oldId ? [oldId] : []
+      delete smm.activeProxyId
+    }
+    if (!Array.isArray(parsed.smartMode.selectedProxyIds)) parsed.smartMode.selectedProxyIds = []
+    // drop selected IDs that no longer exist
+    const ids = new Set((parsed.smartMode.proxies as ProxyEntry[]).map((p: ProxyEntry) => p.id))
+    parsed.smartMode.selectedProxyIds = (parsed.smartMode.selectedProxyIds as string[]).filter((id: string) => ids.has(id))
     if (!Array.isArray(parsed.smartMode.platforms)) parsed.smartMode.platforms = ['all']
     return parsed
   } catch {
