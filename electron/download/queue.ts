@@ -19,12 +19,20 @@ export interface Task extends ScopeOpts {
   error?: string
   createdAt: number
   updatedAt: number
+  /** Per-task output dir override (prospects). Defaults to global downloadDir. */
+  outDir?: string
+  /** Prospect tracking: which prospect/item this task belongs to. */
+  prospectId?: string
+  prospectItemId?: string
 }
 
 export interface NewTaskInput {
   url: string
   quality: Quality
   scopeOpts?: ScopeOpts
+  outDir?: string
+  prospectId?: string
+  prospectItemId?: string
 }
 
 /** Normalize a URL for duplicate detection. */
@@ -75,7 +83,7 @@ export class QueueManager {
     return [...this.tasks.values()].sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  add(url: string, quality: Quality, scopeOpts?: ScopeOpts): Task {
+  add(url: string, quality: Quality, scopeOpts?: ScopeOpts, extra?: { outDir?: string; prospectId?: string; prospectItemId?: string }): Task {
     const now = Date.now()
     const so = { ...defaultScopeOpts(), ...scopeOpts }
     const task: Task = {
@@ -92,7 +100,10 @@ export class QueueManager {
       eta: '',
       createdAt: now,
       updatedAt: now,
-      ...so
+      ...so,
+      ...(extra?.outDir ? { outDir: extra.outDir } : {}),
+      ...(extra?.prospectId ? { prospectId: extra.prospectId } : {}),
+      ...(extra?.prospectItemId ? { prospectItemId: extra.prospectItemId } : {})
     }
     this.tasks.set(task.id, task)
     this.save()
@@ -133,7 +144,10 @@ export class QueueManager {
         eta: '',
         createdAt: now,
         updatedAt: now,
-        ...so
+        ...so,
+        ...(input.outDir ? { outDir: input.outDir } : {}),
+        ...(input.prospectId ? { prospectId: input.prospectId } : {}),
+        ...(input.prospectItemId ? { prospectItemId: input.prospectItemId } : {})
       }
       this.tasks.set(task.id, task)
       added++
@@ -250,7 +264,7 @@ export class QueueManager {
     const job = new DownloadJob(
       task.id,
       task.url,
-      this.getOutDir(),
+      task.outDir ?? this.getOutDir(),
       task.quality,
       tools,
       (e: ProgressEvent) => this.onJobEvent(task.id, e),
