@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -34,6 +35,81 @@ func gzipBytes(t *testing.T, payload []byte) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func zipBytes(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, payload := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// zip 包：只提取 ZipInner 指定的单个文件，校验针对压缩包本身
+func TestInstallZipExtractsSingleFile(t *testing.T) {
+	payload := []byte("#!/bin/sh\necho deno\n")
+	archive := zipBytes(t, map[string][]byte{
+		"deno":         payload,
+		"README.md":    []byte("not the binary"),
+		"subdir/other": []byte("noise"),
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(archive)))
+		w.Write(archive)
+	}))
+	defer srv.Close()
+
+	target := filepath.Join(t.TempDir(), "deno")
+	err := Install(context.Background(), []Task{{
+		Tool: "deno", URL: srv.URL, SHA256: sha256Hex(archive),
+		Zip: true, ZipInner: "deno", Target: target,
+	}}, Options{Timeout: 30 * time.Second})
+	if err != nil {
+		t.Fatalf("安装失败：%v", err)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("解压结果不符，得到 %q", got)
+	}
+}
+
+// zip 包中没有 ZipInner 指定的文件时必须报错，且不留下目标文件
+func TestInstallZipRejectsMissingInner(t *testing.T) {
+	archive := zipBytes(t, map[string][]byte{"deno": []byte("x")})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(archive)))
+		w.Write(archive)
+	}))
+	defer srv.Close()
+
+	target := filepath.Join(t.TempDir(), "deno")
+	err := Install(context.Background(), []Task{{
+		Tool: "deno", URL: srv.URL, SHA256: sha256Hex(archive),
+		Zip: true, ZipInner: "deno.exe", Target: target,
+	}}, Options{Timeout: 30 * time.Second})
+	if err == nil {
+		t.Fatal("应报错：zip 包中没有 deno.exe")
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Error("失败后不应留下目标文件")
+	}
 }
 
 // 校验值针对下载内容（gzip 时为压缩文件），通过后解压安装
