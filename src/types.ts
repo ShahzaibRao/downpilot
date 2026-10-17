@@ -73,6 +73,10 @@ export interface QueueTask extends ScopeOpts {
   error?: string
   createdAt: number
   updatedAt: number
+  /** set for prospect auto-downloads */
+  prospectId?: string
+  prospectItemId?: string
+  outDir?: string
 }
 
 export interface HistoryEntry {
