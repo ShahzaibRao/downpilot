@@ -19,6 +19,8 @@ export interface Prospect {
   folder: string
   /** download quality for this prospect's content */
   quality: Quality
+  /** minutes between auto-checks (CreatorWatch-style, default 60) */
+  intervalMinutes: number
   status: ProspectStatus
   /** consecutive check failures; 3 → auto-pause */
   failCount: number
@@ -99,7 +101,7 @@ export class ProspectStore {
     return this.prospects.find((p) => p.id === id)
   }
 
-  add(url: string, name?: string, quality?: Quality): Prospect {
+  add(url: string, name?: string, quality?: Quality, intervalMinutes?: number): Prospect {
     const info = prospectNameFromUrl(url)
     const displayName = (name ?? info.name).trim() || info.name
     // unique folder: name, name-2, name-3…
@@ -113,6 +115,7 @@ export class ProspectStore {
       links: [{ id: newId('l'), url: url.trim(), platform: info.platform }],
       folder,
       quality: quality ?? 'best',
+      intervalMinutes: Math.min(1440, Math.max(5, Math.floor(intervalMinutes ?? 60))),
       status: 'ok',
       failCount: 0,
       lastCheck: null,
@@ -187,6 +190,14 @@ export class ProspectStore {
     return p
   }
 
+  setInterval(id: string, minutes: number): Prospect {
+    const p = this.get(id)
+    if (!p) throw new Error('Prospect not found')
+    p.intervalMinutes = Math.min(1440, Math.max(5, Math.floor(minutes) || 60))
+    this.save()
+    return p
+  }
+
   setStatus(id: string, status: ProspectStatus, error?: string | null): void {
     const p = this.get(id)
     if (!p) return
@@ -237,9 +248,10 @@ export class ProspectStore {
       const arr = JSON.parse(raw)
       if (Array.isArray(arr)) {
         this.prospects = arr
-        // backfill quality for prospects saved before the field existed
+        // backfill for prospects saved before these fields existed
         for (const p of this.prospects) {
           if (!p.quality) p.quality = 'best'
+          if (!p.intervalMinutes) p.intervalMinutes = 60
         }
       }
     } catch {
