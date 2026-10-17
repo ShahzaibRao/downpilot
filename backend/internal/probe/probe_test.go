@@ -19,6 +19,13 @@ func TestParseVersion(t *testing.T) {
 		{"ffmpeg", "ERROR: missing runtime DLL", ""},
 		{"ffmpeg", "ffmpeg version unknown", ""},
 		{"ffmpeg", "another tool version 6.0", ""},
+		{"gallery-dl", "1.32.16\n", "1.32.16"},
+		{"gallery-dl", "1.32.9\n", "1.32.9"},
+		{"gallery-dl", "1.33.0-dev:2026.10.17\n", "2026.10.17"},
+		{"gallery-dl", "ERROR: missing runtime DLL", ""},
+		{"deno", "deno 2.9.7 (stable, release, x86_64-pc-windows-msvc)\nv8 14.4.299.1\ntypescript 5.9.2\n", "2.9.7"},
+		{"deno", "deno 1.46.3 (stable, release, aarch64-apple-darwin)\n", "1.46.3"},
+		{"deno", "ERROR: missing runtime DLL", ""},
 	}
 	for _, c := range cases {
 		if got := ParseVersion(c.tool, c.out); got != c.want {
