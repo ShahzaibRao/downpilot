@@ -1,10 +1,11 @@
-// Package fetch 负责下载并安装 yt-dlp / ffmpeg / ffprobe 到托管目录。
+// Package fetch 负责下载并安装 yt-dlp / ffmpeg / ffprobe / gallery-dl / deno 到托管目录。
 //
 // 下载先落到临时文件并做 SHA-256 校验，校验通过后才解压并原子重命名，
 // 因此不会因为网络中断或损坏的镜像而装上一个半成品可执行文件。
 package fetch
 
 import (
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -38,11 +39,15 @@ type Emitter func(Event)
 
 // Task 一次安装任务
 type Task struct {
-	Tool   string // yt-dlp / ffmpeg / ffprobe
+	Tool   string // yt-dlp / ffmpeg / ffprobe / gallery-dl / deno
 	URL    string
-	SHA256 string // 下载内容的校验值（gzip 时为压缩文件的哈希）
+	SHA256 string // 下载内容的校验值（gzip/zip 时为压缩文件的哈希）
 	Gzip   bool
-	Target string // 最终安装路径
+	// Zip 为 true 时从 zip 包中提取单个文件；ZipInner 为包内路径
+	// （为空时取压缩包内第一个文件）。与 Gzip 互斥。
+	Zip      bool
+	ZipInner string
+	Target   string // 最终安装路径
 }
 
 // Options 下载选项
@@ -118,6 +123,9 @@ func installOne(ctx context.Context, task Task, opts Options) error {
 	staging := task.Target + ".part"
 	if task.Gzip {
 		staging += ".gz"
+	}
+	if task.Zip {
+		staging += ".zip"
 	}
 	_ = os.Remove(staging)
 	defer os.Remove(staging)
@@ -205,6 +213,14 @@ func promote(task Task, staging string) error {
 		defer os.Remove(decompressed)
 		source = decompressed
 	}
+	if task.Zip {
+		extracted := staging[:len(staging)-4] // 去掉 .zip
+		if err := unzipSingleFile(staging, task.ZipInner, extracted); err != nil {
+			return err
+		}
+		defer os.Remove(extracted)
+		source = extracted
+	}
 
 	if err := os.Chmod(source, 0o755); err != nil {
 		return fmt.Errorf("设置执行权限失败：%w", err)
@@ -236,6 +252,58 @@ func gunzipFile(src, dst string) error {
 		return fmt.Errorf("创建文件失败：%w", err)
 	}
 	if _, err := io.Copy(out, zr); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return fmt.Errorf("解压失败：%w", err)
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("写入文件失败：%w", err)
+	}
+	return nil
+}
+
+// unzipSingleFile 从 zip 包中提取单个文件。
+//
+// inner 为空时取包内第一个文件；否则按路径精确匹配。
+// 只允许提取单个文件（拒绝目录穿越：清理后的路径必须仍在包内），
+// 因为我们的用途就是"拿一个可执行文件出来"。
+func unzipSingleFile(src, inner, dst string) error {
+	zr, err := zip.OpenReader(src)
+	if err != nil {
+		return fmt.Errorf("解压失败：%w", err)
+	}
+	defer zr.Close()
+
+	var target *zip.File
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if inner == "" {
+			target = f
+			break
+		}
+		if filepath.Clean(f.Name) == filepath.Clean(inner) {
+			target = f
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("解压失败：zip 包中没有 %q", inner)
+	}
+
+	rc, err := target.Open()
+	if err != nil {
+		return fmt.Errorf("解压失败：%w", err)
+	}
+	defer rc.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("创建文件失败：%w", err)
+	}
+	if _, err := io.Copy(out, rc); err != nil {
 		out.Close()
 		os.Remove(dst)
 		return fmt.Errorf("解压失败：%w", err)
