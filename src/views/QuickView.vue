@@ -35,6 +35,12 @@
         <label class="muted"><input v-model="order" type="radio" value="oldest" /> Oldest</label>
         <label class="muted"><input v-model="order" type="radio" value="popular" /> Popular</label>
       </div>
+      <div v-if="scope === 'channel'" class="row scope-opts">
+        <span class="muted">Content (YouTube):</span>
+        <label class="muted"><input v-model="content" type="radio" value="all" /> All</label>
+        <label class="muted"><input v-model="content" type="radio" value="videos" /> Videos only</label>
+        <label class="muted"><input v-model="content" type="radio" value="shorts" /> Shorts only</label>
+      </div>
       <div v-if="error" class="badge err" style="margin-top: 8px;">{{ error }}</div>
       <p class="muted" style="margin: 8px 0 0;">Saves to: <code>{{ downloadDir }}</code> <a href="#" @click.prevent="goSettings">(change)</a></p>
       <div style="margin-top: 8px;">
@@ -74,6 +80,7 @@
         <strong>{{ task.filename || task.url }}</strong>
         <span v-if="task.engine" class="badge engine">{{ task.engine }}</span>
         <span v-if="task.scope !== 'single'" class="badge">{{ task.scope }}</span>
+        <span v-if="task.content && task.content !== 'all'" class="badge">{{ task.content }}</span>
         <span v-if="task.status === 'queued'" class="badge">queued</span>
         <span v-else-if="task.status === 'running'" class="badge info">
           {{ task.percent < 0 ? 'working…' : 'downloading' }}
@@ -108,13 +115,14 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue'
-import type { QueueTask, Quality, Scope, Order, ScopeOpts } from '../types'
+import type { QueueTask, Quality, Scope, Order, ContentFilter, ScopeOpts } from '../types'
 
 const url = ref('')
 const quality = ref<Quality>('best')
 const scope = ref<Scope>('single')
 const maxItems = ref(50)
 const order = ref<Order>('latest')
+const content = ref<ContentFilter>('all')
 const adding = ref(false)
 const error = ref('')
 const tasks = ref<QueueTask[]>([])
@@ -134,7 +142,8 @@ function currentScopeOpts(): ScopeOpts {
   return {
     scope: scope.value,
     maxItems: Math.min(500, Math.max(1, Math.floor(maxItems.value) || 50)),
-    order: order.value
+    order: order.value,
+    content: content.value
   }
 }
 
