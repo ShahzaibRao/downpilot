@@ -72,6 +72,15 @@ contextBridge.exposeInMainWorld('dpApi', {
   potStart: () => ipcRenderer.invoke('pot:start'),
   potStop: () => ipcRenderer.invoke('pot:stop'),
   potForceStop: () => ipcRenderer.invoke('pot:forceStop'),
+  // prospects (Phase 3)
+  prospectsList: () => ipcRenderer.invoke('prospects:list'),
+  prospectsAdd: (url: string, name?: string) => ipcRenderer.invoke('prospects:add', url, name),
+  prospectsAddLink: (prospectId: string, url: string) => ipcRenderer.invoke('prospects:addLink', prospectId, url),
+  prospectsRemoveLink: (prospectId: string, linkId: string) => ipcRenderer.invoke('prospects:removeLink', prospectId, linkId),
+  prospectsRemove: (id: string) => ipcRenderer.invoke('prospects:remove', id),
+  prospectsRename: (id: string, name: string) => ipcRenderer.invoke('prospects:rename', id, name),
+  prospectsSetStatus: (id: string, status: string) => ipcRenderer.invoke('prospects:setStatus', id, status),
+  prospectsUnpause: (id: string) => ipcRenderer.invoke('prospects:unpause', id),
 
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
