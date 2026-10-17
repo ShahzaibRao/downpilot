@@ -9,7 +9,7 @@
           class="url-input"
           type="url"
           placeholder="Paste a video link… (YouTube, TikTok, Instagram, …)"
-          @keyup.enter="start"
+          @keyup.enter="add"
         />
         <select v-model="quality" class="quality">
           <option value="best">Best</option>
@@ -18,92 +18,89 @@
           <option value="720p">720p</option>
           <option value="480p">480p</option>
         </select>
-        <button class="btn" :disabled="starting || !url.trim()" @click="start">
-          {{ starting ? 'Starting…' : 'Download' }}
+        <button class="btn" :disabled="adding || !url.trim()" @click="add">
+          {{ adding ? 'Adding…' : 'Download' }}
         </button>
       </div>
       <div v-if="error" class="badge err" style="margin-top: 8px;">{{ error }}</div>
       <p class="muted" style="margin: 8px 0 0;">Saves to: <code>{{ downloadDir }}</code> <a href="#" @click.prevent="goSettings">(change)</a></p>
     </div>
 
-    <div v-if="jobs.length === 0" class="card">
-      <p class="muted">No downloads yet. Paste a link above to start.</p>
+    <div v-if="tasks.length === 0" class="card">
+      <p class="muted">Queue is empty. Paste a link above — tasks survive app restarts.</p>
     </div>
 
-    <div v-for="job in jobs" :key="job.id" class="card">
+    <div v-for="task in tasks" :key="task.id" class="card">
       <div class="job-head">
-        <strong>{{ job.filename || job.url }}</strong>
-        <span v-if="job.engine" class="badge engine">{{ job.engine }}</span>
-        <span v-if="job.status === 'downloading'" class="badge info">downloading</span>
-        <span v-else-if="job.status === 'merging'" class="badge info">merging…</span>
-        <span v-else-if="job.status === 'done'" class="badge ok">done</span>
+        <strong>{{ task.filename || task.url }}</strong>
+        <span v-if="task.engine" class="badge engine">{{ task.engine }}</span>
+        <span v-if="task.status === 'queued'" class="badge">queued</span>
+        <span v-else-if="task.status === 'running'" class="badge info">
+          {{ task.percent < 0 ? 'working…' : 'downloading' }}
+        </span>
+        <span v-else-if="task.status === 'paused'" class="badge">paused</span>
+        <span v-else-if="task.status === 'done'" class="badge ok">done</span>
         <span v-else class="badge err">failed</span>
       </div>
-      <div class="progress" :class="{ indeterminate: job.percent < 0 }">
-        <div class="bar" :style="{ width: Math.min(100, Math.max(0, job.percent)) + '%' }"></div>
+      <div class="progress" :class="{ indeterminate: task.percent < 0 }">
+        <div class="bar" :style="{ width: Math.min(100, Math.max(0, task.percent)) + '%' }"></div>
       </div>
       <div class="job-meta muted">
-        <span v-if="job.percent >= 0">{{ job.percent.toFixed(1) }}%</span>
+        <span v-if="task.percent >= 0">{{ task.percent.toFixed(1) }}%</span>
         <span v-else>working…</span>
-        <span v-if="job.speed">{{ job.speed }}</span>
-        <span v-if="job.eta">ETA {{ job.eta }}</span>
-        <span v-if="job.total">{{ formatBytes(job.downloaded) }} / {{ formatBytes(job.total) }}</span>
-        <button
-          v-if="job.status === 'downloading' || job.status === 'merging'"
-          class="btn secondary small"
-          @click="cancel(job.id)"
-        >Cancel</button>
+        <span v-if="task.speed">{{ task.speed }}</span>
+        <span v-if="task.eta">ETA {{ task.eta }}</span>
+        <span v-if="task.total">{{ formatBytes(task.downloaded) }} / {{ formatBytes(task.total) }}</span>
+        <span class="spacer"></span>
+        <button v-if="task.status === 'running'" class="btn secondary small" @click="pause(task.id)">Pause</button>
+        <button v-if="task.status === 'paused'" class="btn secondary small" @click="resume(task.id)">Resume</button>
+        <button v-if="task.status === 'failed'" class="btn secondary small" @click="retry(task.id)">Retry</button>
+        <button v-if="task.status !== 'running'" class="btn secondary small" @click="remove(task.id)">✕</button>
       </div>
-      <div v-if="job.error" class="badge err" style="margin-top: 8px;">{{ job.error }}</div>
+      <div v-if="task.error" class="badge err" style="margin-top: 8px;">{{ task.error }}</div>
+    </div>
+
+    <div v-if="hasFinished" class="card row" style="justify-content: flex-end;">
+      <button class="btn secondary small" @click="clearDone">Clear completed</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import type { DownloadProgress, Quality } from '../types'
-
-interface Job extends DownloadProgress {
-  url: string
-}
+import { onMounted, onUnmounted, ref, computed } from 'vue'
+import type { QueueTask, Quality } from '../types'
 
 const url = ref('')
 const quality = ref<Quality>('best')
-const starting = ref(false)
+const adding = ref(false)
 const error = ref('')
-const jobs = ref<Job[]>([])
+const tasks = ref<QueueTask[]>([])
 const downloadDir = ref('')
 
 let unsubscribe: (() => void) | null = null
 
-async function start() {
+const hasFinished = computed(() => tasks.value.some((t) => t.status === 'done' || t.status === 'failed'))
+
+async function add() {
   const u = url.value.trim()
   if (!u) return
-  starting.value = true
+  adding.value = true
   error.value = ''
   try {
-    const id = await window.dpApi.startDownload({ url: u, quality: quality.value })
-    jobs.value.unshift({
-      id, url: u, status: 'downloading', percent: 0,
-      downloaded: 0, total: null, speed: '', eta: '', filename: '', engine: ''
-    })
+    await window.dpApi.queueAdd({ url: u, quality: quality.value })
     url.value = ''
   } catch (e) {
     error.value = (e as Error).message
   } finally {
-    starting.value = false
+    adding.value = false
   }
 }
 
-async function cancel(id: string) {
-  await window.dpApi.cancelDownload(id)
-  jobs.value = jobs.value.filter((j) => j.id !== id)
-}
-
-function onProgress(evt: DownloadProgress) {
-  const job = jobs.value.find((j) => j.id === evt.id)
-  if (job) Object.assign(job, evt)
-}
+async function pause(id: string) { await window.dpApi.queuePause(id) }
+async function resume(id: string) { await window.dpApi.queueResume(id) }
+async function retry(id: string) { await window.dpApi.queueRetry(id) }
+async function remove(id: string) { await window.dpApi.queueCancel(id) }
+async function clearDone() { await window.dpApi.queueClearDone() }
 
 function formatBytes(n: number): string {
   if (n <= 0) return '0 B'
@@ -113,13 +110,13 @@ function formatBytes(n: number): string {
 }
 
 function goSettings() {
-  // simple tab switch via custom event — App listens for it
   window.dispatchEvent(new CustomEvent('dp:goto', { detail: 'settings' }))
 }
 
 onMounted(async () => {
-  unsubscribe = window.dpApi.onDownloadProgress(onProgress)
+  unsubscribe = window.dpApi.onQueueUpdate((t) => { tasks.value = t })
   try {
+    tasks.value = await window.dpApi.queueList()
     downloadDir.value = (await window.dpApi.getSettings()).downloadDir
   } catch { /* ignore */ }
 })
@@ -152,6 +149,7 @@ onUnmounted(() => {
 @keyframes slide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .badge.engine { background: #2a2438; color: #c4b5fd; }
 .job-meta { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 13px; }
-.btn.small { padding: 4px 12px; font-size: 12px; margin-left: auto; }
+.spacer { flex: 1; }
+.btn.small { padding: 4px 12px; font-size: 12px; }
 a { color: #93c5fd; }
 </style>
