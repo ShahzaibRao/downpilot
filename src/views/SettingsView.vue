@@ -123,12 +123,13 @@
         <div class="preview-row">
           <span>Server files</span>
           <span v-if="potFilesReady" class="badge ok">ready</span>
+          <span v-else-if="potRunning && !potIsOurs" class="badge info">external</span>
           <span v-else class="badge">not set up</span>
-          <span class="muted" style="font-size: 12px;">{{ potFilesReady ? '' : 'set up on first start' }}</span>
+          <span class="muted" style="font-size: 12px;">{{ potFilesReady ? '' : (potRunning && !potIsOurs ? 'using external server' : 'set up on first start') }}</span>
         </div>
         <div class="preview-row">
           <span>Server</span>
-          <span v-if="potRunning" class="badge ok">running :{{ potPort }}{{ potVersion ? ' (v' + potVersion + ')' : '' }}</span>
+          <span v-if="potRunning" class="badge ok">running :{{ potPort }}{{ potVersion ? ' (v' + potVersion + ')' : '' }}{{ potIsOurs ? '' : ' (external)' }}</span>
           <span v-else class="badge">stopped</span>
           <span class="spacer"></span>
           <button v-if="!potRunning" class="btn secondary small" :disabled="potBusy || !potDeno" @click="doPotStart">Start</button>
@@ -531,6 +532,7 @@ async function doSiteTest() {
 const potDeno = ref(false)
 const potFilesReady = ref(false)
 const potRunning = ref(false)
+const potIsOurs = ref(false)
 const potVersion = ref<string | null>(null)
 const potPort = ref(4416)
 const potBusy = ref(false)
@@ -543,6 +545,7 @@ async function loadPotStatus() {
     potDeno.value = !!s.denoPath
     potFilesReady.value = s.filesReady
     potRunning.value = s.running
+    potIsOurs.value = s.isOurs
     potVersion.value = s.version
     potPort.value = s.port
   } catch (e) {
