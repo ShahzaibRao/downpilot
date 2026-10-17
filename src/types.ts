@@ -95,7 +95,12 @@ export interface CookieProfileMeta {
   lastTestOk?: boolean
 }
 
-export interface ProxyConfig {
+export type ProxyProtocol = 'http' | 'https' | 'socks4' | 'socks5'
+
+export interface ProxyEntry {
+  id: string
+  name: string
+  protocol: ProxyProtocol
   host: string
   port: number
   username: string
@@ -104,7 +109,8 @@ export interface ProxyConfig {
 
 export interface SmartModeConfig {
   enabled: boolean
-  proxy: ProxyConfig
+  proxies: ProxyEntry[]
+  activeProxyId: string | null
   platforms: string[]
 }
 
@@ -113,6 +119,13 @@ export interface ProxyTestResult {
   ip?: string
   status?: number
   error?: string
+}
+
+export interface PotStatus {
+  denoPath: string | null
+  running: boolean
+  version: string | null
+  port: number
 }
 
 export interface Settings {
@@ -145,6 +158,9 @@ export interface DpApi {
   onCookiesUpdate(cb: (metas: CookieProfileMeta[]) => void): () => void
   proxyTest(): Promise<ProxyTestResult>
   proxyTestSite(siteUrl: string): Promise<ProxyTestResult>
+  potStatus(): Promise<PotStatus>
+  potStart(): Promise<boolean>
+  potStop(): Promise<boolean>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
