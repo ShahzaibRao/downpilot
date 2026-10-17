@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { YtDlpJob, type Quality } from '../download/engine'
+import { DownloadJob, type Quality } from '../download/engine'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -129,13 +129,14 @@ app.on('window-all-closed', () => {
 // ---- IPC: downloads (P1a — yt-dlp single downloads) ----
 
 interface ToolPaths {
-  ytdlp: string
-  ffmpegDir: string
+  ytdlp?: string
+  ffmpegDir?: string
+  gallerydl?: string
 }
 
 let toolPathsCache: ToolPaths | null = null
 
-/** Resolve yt-dlp + ffmpeg locations via the sidecar (cached for the session). */
+/** Resolve tool locations via the sidecar (cached for the session). Missing tools stay undefined. */
 async function toolPaths(): Promise<ToolPaths> {
   if (toolPathsCache) return toolPathsCache
   const { stdout } = await execFileAsync(
@@ -145,26 +146,37 @@ async function toolPaths(): Promise<ToolPaths> {
   )
   const results = (JSON.parse(stdout) as { results: Array<{ kind: string; found: boolean; path?: string }> }).results
   const byKind = new Map(results.map((r) => [r.kind, r]))
-  const ytdlp = byKind.get('yt-dlp')
-  const ffmpeg = byKind.get('ffmpeg')
-  if (!ytdlp?.found || !ytdlp.path) throw new Error('yt-dlp is not installed — download it from Settings first')
-  if (!ffmpeg?.found || !ffmpeg.path) throw new Error('ffmpeg is not installed — download it from Settings first')
-  toolPathsCache = { ytdlp: ytdlp.path, ffmpegDir: path.dirname(ffmpeg.path) }
+  const pick = (kind: string): string | undefined => {
+    const r = byKind.get(kind)
+    return r?.found && r.path ? r.path : undefined
+  }
+  const ffmpeg = pick('ffmpeg')
+  toolPathsCache = {
+    ytdlp: pick('yt-dlp'),
+    ffmpegDir: ffmpeg ? path.dirname(ffmpeg) : undefined,
+    gallerydl: pick('gallery-dl')
+  }
   return toolPathsCache
 }
 
-const jobs = new Map<string, YtDlpJob>()
+const jobs = new Map<string, DownloadJob>()
 
 /** Start a download. Returns the job id; progress streams as 'dl:progress'. */
 ipcMain.handle('dl:start', async (event, opts: { url: string; quality: Quality }) => {
   const url = opts.url.trim()
   if (!/^https?:\/\//i.test(url)) throw new Error('Please paste a valid http(s) link')
   const tools = await toolPaths()
+  if (!tools.ytdlp && !tools.gallerydl) {
+    throw new Error('No download engine installed — get yt-dlp or gallery-dl from Settings first')
+  }
   const settings = getSettings()
   const id = randomUUID()
-  const job = new YtDlpJob(
+  const job = new DownloadJob(
     id,
-    { url, outDir: settings.downloadDir, quality: opts.quality, ytdlpPath: tools.ytdlp, ffmpegDir: tools.ffmpegDir },
+    url,
+    settings.downloadDir,
+    opts.quality,
+    tools,
     (e) => {
       event.sender.send('dl:progress', e)
       if (e.status === 'done' || e.status === 'error') jobs.delete(id)
