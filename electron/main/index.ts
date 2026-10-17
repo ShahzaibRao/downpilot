@@ -8,6 +8,7 @@ import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
 import { ProspectStore } from '../prospects/store'
 import { SeenStore } from '../prospects/seen'
+import { ProspectScheduler, DEFAULT_MAX_NEW } from '../prospects/scheduler'
 import { CookieVault, platformForUrl } from '../cookies'
 import { PotManager } from '../pot'
 import { ProxyRotator, buildProxyUrl, selectedProxies, testProxy, testSite } from '../smartmode'
@@ -123,6 +124,12 @@ ipcMain.handle('deps:fetch', async (event, only?: string[]) => {
 
 app.whenReady().then(() => {
   createWindow()
+  // Phase 3b: start the prospect auto-watch scheduler (60-min cycle).
+  try {
+    getProspectScheduler().start()
+  } catch {
+    /* best-effort */
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -136,6 +143,12 @@ app.on('before-quit', () => {
   // Phase 2b: kill the Deno POT server (if running) on app quit.
   try {
     potManager?.stop()
+  } catch {
+    /* best-effort */
+  }
+  // Phase 3b: stop the prospect scheduler.
+  try {
+    prospectScheduler?.stop()
   } catch {
     /* best-effort */
   }
@@ -190,6 +203,41 @@ function getProspectStore(): ProspectStore {
 function getSeenStore(): SeenStore {
   if (!seenStore) seenStore = new SeenStore()
   return seenStore
+}
+
+let prospectScheduler: ProspectScheduler | null = null
+
+function getProspectScheduler(): ProspectScheduler {
+  if (!prospectScheduler) {
+    prospectScheduler = new ProspectScheduler({
+      getTools: () => toolPaths(),
+      getStore: () => getProspectStore(),
+      getSeen: () => getSeenStore(),
+      getQueue: () => getQueue(),
+      getDownloadDir: () => getSettings().downloadDir,
+      getCookiesFile: (platform: string) => {
+        try {
+          return getCookieVault().materialize(platform)
+        } catch {
+          return null
+        }
+      },
+      getProxyUrl: (url: string) => {
+        try {
+          return proxyRotator.nextFor(url, getSettings().smartMode)
+        } catch {
+          return null
+        }
+      },
+      getMaxNew: () => DEFAULT_MAX_NEW,
+      onCheckDone: (results) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('prospects:checkDone', results)
+        }
+      }
+    })
+  }
+  return prospectScheduler
 }
 let potManager: PotManager | null = null
 const proxyRotator = new ProxyRotator()
@@ -251,6 +299,11 @@ function getQueue(): QueueManager {
           downloaded: task.downloaded,
           completedAt: Date.now()
         })
+        // prospect task completed → mark item as seen (only on success;
+        // failed ones stay unseen so the next check retries them)
+        if (task.prospectId && task.prospectItemId && task.status === 'done') {
+          getSeenStore().mark(task.prospectId, task.prospectItemId)
+        }
       },
       {
         getCookiesFile: (platform: string) => getCookieVault().materialize(platform),
@@ -411,6 +464,10 @@ ipcMain.handle('prospects:setStatus', async (_event, id: string, status: 'ok' | 
 ipcMain.handle('prospects:unpause', async (_event, id: string) => {
   getProspectStore().unpause(id)
   return true
+})
+
+ipcMain.handle('prospects:checkNow', async () => {
+  return getProspectScheduler().checkAll()
 })
 
 // ---- IPC: Smart Mode proxy tests (Phase 2c) ----
