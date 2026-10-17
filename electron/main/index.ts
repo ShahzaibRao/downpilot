@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, Notification } from 'electron'
+import { NotificationStore } from '../notifications'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
@@ -207,6 +208,13 @@ function getSeenStore(): SeenStore {
 
 let prospectScheduler: ProspectScheduler | null = null
 
+let notificationStore: NotificationStore | null = null
+
+function getNotificationStore(): NotificationStore {
+  if (!notificationStore) notificationStore = new NotificationStore()
+  return notificationStore
+}
+
 function getProspectScheduler(): ProspectScheduler {
   if (!prospectScheduler) {
     prospectScheduler = new ProspectScheduler({
@@ -231,8 +239,39 @@ function getProspectScheduler(): ProspectScheduler {
       },
       getMaxNew: () => DEFAULT_MAX_NEW,
       onCheckDone: (results) => {
+        // in-app + native notifications for new content
+        const store = getNotificationStore()
+        for (const r of results) {
+          if (r.newItems > 0) {
+            store.add(
+              `New from ${r.prospectName}`,
+              `${r.newItems} new item(s), ${r.queued} queued for download`,
+              r.prospectId,
+              r.prospectName
+            )
+          }
+          if (r.error) {
+            const p = getProspectStore().get(r.prospectId)
+            if (p && p.status === 'paused' && p.failCount >= 3) {
+              store.add(
+                `${r.prospectName} auto-paused`,
+                `3 consecutive check failures. Last: ${r.error}`,
+                r.prospectId,
+                r.prospectName
+              )
+            }
+          }
+        }
+        const totalNew = results.reduce((n, r) => n + r.newItems, 0)
+        if (totalNew > 0 && Notification.isSupported()) {
+          new Notification({
+            title: 'DownPilot — new content',
+            body: `${totalNew} new item(s) from ${results.filter((r) => r.newItems > 0).length} prospect(s) queued`
+          }).show()
+        }
         if (mainWindow) {
           mainWindow.webContents.send('prospects:checkDone', results)
+          mainWindow.webContents.send('notify:update', getNotificationStore().list())
         }
       }
     })
@@ -288,6 +327,7 @@ function getQueue(): QueueManager {
       },
       (task) => {
         // finished task → history (last 100)
+        const prospect = task.prospectId ? getProspectStore().get(task.prospectId) : undefined
         getHistory().add({
           id: task.id,
           url: task.url,
@@ -297,7 +337,9 @@ function getQueue(): QueueManager {
           status: task.status === 'done' ? 'done' : 'failed',
           error: task.error,
           downloaded: task.downloaded,
-          completedAt: Date.now()
+          completedAt: Date.now(),
+          ...(task.prospectId ? { prospectId: task.prospectId } : {}),
+          ...(prospect ? { prospectName: prospect.name } : {})
         })
         // prospect task completed → mark item as seen (only on success;
         // failed ones stay unseen so the next check retries them)
@@ -468,6 +510,42 @@ ipcMain.handle('prospects:unpause', async (_event, id: string) => {
 
 ipcMain.handle('prospects:checkNow', async () => {
   return getProspectScheduler().checkAll()
+})
+
+// ---- IPC: notifications (Phase 3c) ----
+
+ipcMain.handle('notify:list', async () => {
+  return getNotificationStore().list()
+})
+
+ipcMain.handle('notify:markRead', async (_event, id: string) => {
+  getNotificationStore().markRead(id)
+  return true
+})
+
+ipcMain.handle('notify:markAllRead', async () => {
+  getNotificationStore().markAllRead()
+  return true
+})
+
+ipcMain.handle('notify:clear', async () => {
+  getNotificationStore().clear()
+  return true
+})
+
+// ---- IPC: shell (Phase 3c) ----
+
+ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
+  await shell.openPath(targetPath)
+  return true
+})
+
+ipcMain.handle('shell:openProspectFolder', async (_event, prospectId: string) => {
+  const p = getProspectStore().get(prospectId)
+  if (!p) throw new Error('Prospect not found')
+  const folder = path.join(getSettings().downloadDir, 'prospects', p.folder)
+  await shell.openPath(folder)
+  return true
 })
 
 // ---- IPC: Smart Mode proxy tests (Phase 2c) ----
