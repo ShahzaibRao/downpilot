@@ -57,6 +57,19 @@ contextBridge.exposeInMainWorld('dpApi', {
     return () => ipcRenderer.removeListener('history:update', handler)
   },
 
+  // ---- cookie profiles (Phase 2a) ----
+  cookiesList: () => ipcRenderer.invoke('cookies:list'),
+  cookiesAdd: (opts: { platform: string; content: string }) => ipcRenderer.invoke('cookies:add', opts),
+  cookiesRemove: (platform: string) => ipcRenderer.invoke('cookies:remove', platform),
+  cookiesTest: (opts: { platform: string; testUrl: string }) => ipcRenderer.invoke('cookies:test', opts),
+
+  /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
+  onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
+    const handler = (_event: unknown, metas: Record<string, unknown>[]) => cb(metas)
+    ipcRenderer.on('cookies:update', handler)
+    return () => ipcRenderer.removeListener('cookies:update', handler)
+  },
+
   // ---- settings ----
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch),
