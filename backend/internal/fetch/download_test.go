@@ -56,7 +56,7 @@ func zipBytes(t *testing.T, files map[string][]byte) []byte {
 	return buf.Bytes()
 }
 
-// zip 包：只提取 ZipInner 指定的单个文件，校验针对压缩包本身
+// zip archive: extract only the ZipInner-specified single file; the checksum covers the archive itself
 func TestInstallZipExtractsSingleFile(t *testing.T) {
 	payload := []byte("#!/bin/sh\necho deno\n")
 	archive := zipBytes(t, map[string][]byte{
@@ -77,7 +77,7 @@ func TestInstallZipExtractsSingleFile(t *testing.T) {
 		Zip: true, ZipInner: "deno", Target: target,
 	}}, Options{Timeout: 30 * time.Second})
 	if err != nil {
-		t.Fatalf("安装失败：%v", err)
+		t.Fatalf("install failed: %v", err)
 	}
 
 	got, err := os.ReadFile(target)
@@ -85,11 +85,11 @@ func TestInstallZipExtractsSingleFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, payload) {
-		t.Errorf("解压结果不符，得到 %q", got)
+		t.Errorf("extracted content mismatch, got %q", got)
 	}
 }
 
-// zip 包中没有 ZipInner 指定的文件时必须报错，且不留下目标文件
+// a zip missing the ZipInner-specified file must error, leaving no target file behind
 func TestInstallZipRejectsMissingInner(t *testing.T) {
 	archive := zipBytes(t, map[string][]byte{"deno": []byte("x")})
 
@@ -105,14 +105,14 @@ func TestInstallZipRejectsMissingInner(t *testing.T) {
 		Zip: true, ZipInner: "deno.exe", Target: target,
 	}}, Options{Timeout: 30 * time.Second})
 	if err == nil {
-		t.Fatal("应报错：zip 包中没有 deno.exe")
+		t.Fatal("should error: no deno.exe in the zip")
 	}
 	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
-		t.Error("失败后不应留下目标文件")
+		t.Error("no target file should remain after failure")
 	}
 }
 
-// 校验值针对下载内容（gzip 时为压缩文件），通过后解压安装
+// the checksum covers the downloaded bytes (the archive for gzip); install after extraction
 func TestInstallGzipVerifiesCompressedBytes(t *testing.T) {
 	payload := []byte("#!/bin/sh\necho hello\n")
 	archive := gzipBytes(t, payload)
@@ -128,7 +128,7 @@ func TestInstallGzipVerifiesCompressedBytes(t *testing.T) {
 		Tool: "ffmpeg", URL: srv.URL, SHA256: sha256Hex(archive), Gzip: true, Target: target,
 	}}, Options{Timeout: 30 * time.Second})
 	if err != nil {
-		t.Fatalf("安装失败：%v", err)
+		t.Fatalf("install failed: %v", err)
 	}
 
 	got, err := os.ReadFile(target)
@@ -136,17 +136,17 @@ func TestInstallGzipVerifiesCompressedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, payload) {
-		t.Errorf("解压结果不符，得到 %q", got)
+		t.Errorf("extracted content mismatch, got %q", got)
 	}
 	if runtime.GOOS != "windows" {
 		info, _ := os.Stat(target)
 		if info.Mode().Perm()&0o100 == 0 {
-			t.Error("安装后应具备执行权限")
+			t.Error("installed file should be executable")
 		}
 	}
 }
 
-// 校验失败必须中止安装，且不能留下任何可执行文件
+// a checksum failure must abort the install and leave no executable behind
 func TestInstallRejectsBadChecksum(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("malicious payload"))
@@ -159,21 +159,21 @@ func TestInstallRejectsBadChecksum(t *testing.T) {
 		Tool: "yt-dlp", URL: srv.URL, SHA256: strings.Repeat("0", 64), Target: target,
 	}}, Options{Timeout: 30 * time.Second, Retries: 1})
 	if err == nil {
-		t.Fatal("校验失败时应返回错误")
+		t.Fatal("checksum failure should return an error")
 	}
-	if !strings.Contains(err.Error(), "校验失败") {
-		t.Errorf("错误信息应说明校验失败，实际：%v", err)
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Errorf("error should mention checksum mismatch, got: %v", err)
 	}
 	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
-		t.Error("校验失败时不应留下目标文件")
+		t.Error("no target file should remain after checksum failure")
 	}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
-		t.Errorf("目录应保持干净，却发现 %s", e.Name())
+		t.Errorf("dir should stay clean, but found %s", e.Name())
 	}
 }
 
-// 首次请求失败后应自动重试
+// should retry automatically after the first request fails
 func TestInstallRetriesThenSucceeds(t *testing.T) {
 	payload := []byte("binary")
 	attempts := 0
@@ -192,14 +192,14 @@ func TestInstallRetriesThenSucceeds(t *testing.T) {
 		Tool: "yt-dlp", URL: srv.URL, SHA256: sha256Hex(payload), Target: target,
 	}}, Options{Timeout: 30 * time.Second, Retries: 3})
 	if err != nil {
-		t.Fatalf("重试后应成功：%v", err)
+		t.Fatalf("should succeed after retry: %v", err)
 	}
 	if attempts < 2 {
-		t.Errorf("应至少请求两次，实际 %d 次", attempts)
+		t.Errorf("should request at least twice, got %d", attempts)
 	}
 }
 
-// 进度事件必须与压缩包大小一致，不能按解压后的字节数上报（否则百分比会超过 100%）
+// progress events must track the archive size, not post-extraction bytes (or percentages exceed 100%)
 func TestProgressNeverExceedsTotal(t *testing.T) {
 	archive := gzipBytes(t, bytes.Repeat([]byte("x"), 512*1024))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -227,15 +227,15 @@ func TestProgressNeverExceedsTotal(t *testing.T) {
 			continue
 		}
 		if e.Downloaded > e.Total {
-			t.Errorf("已下载 %d 超出总大小 %d", e.Downloaded, e.Total)
+			t.Errorf("downloaded %d exceeds total %d", e.Downloaded, e.Total)
 		}
 	}
 	if !sawProgress {
-		t.Error("应至少上报一次进度")
+		t.Error("should report progress at least once")
 	}
 }
 
-// 已存在的文件在替换时必须成功（Windows 上覆盖运行中的 exe 会失败，需要先删除）
+// replacing an existing file must succeed (overwriting a running exe fails on Windows — delete first)
 func TestInstallOverwritesExisting(t *testing.T) {
 	payload := []byte("new content")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -251,56 +251,56 @@ func TestInstallOverwritesExisting(t *testing.T) {
 	if err := Install(context.Background(), []Task{{
 		Tool: "yt-dlp", URL: srv.URL, SHA256: sha256Hex(payload), Target: target,
 	}}, Options{Timeout: 30 * time.Second}); err != nil {
-		t.Fatalf("覆盖安装失败：%v", err)
+		t.Fatalf("overwrite install failed: %v", err)
 	}
 	got, _ := os.ReadFile(target)
 	if string(got) != string(payload) {
-		t.Errorf("文件未更新，内容为 %q", got)
+		t.Errorf("file not updated, content is %q", got)
 	}
 }
 
 func TestInstallRejectsEmptyTaskList(t *testing.T) {
 	if err := Install(context.Background(), nil, Options{}); err == nil {
-		t.Error("空任务列表应返回错误")
+		t.Error("empty task list should return an error")
 	}
 }
 
-// GitHub 的下载地址带超长签名 JWT：错误信息必须只保留 主机/路径，
-// 否则界面会被一串无意义的查询串撑爆
+// GitHub download URLs carry a very long signed JWT: error messages must keep only host/path,
+// or the UI gets blown up by a meaningless query string
 func TestSanitizeURLStripsQuery(t *testing.T) {
 	raw := `Get "https://release-assets.githubusercontent.com/x/y?sp=r&sig=AbCdEf123&jwt=eyJhbGciOiJIUzI1NiJ9.long.token": net/http: TLS handshake timeout`
 	got := sanitizeURL(raw)
 	if strings.Contains(got, "sig=") || strings.Contains(got, "jwt=") {
-		t.Errorf("查询串未被去掉：%q", got)
+		t.Errorf("query string was not stripped: %q", got)
 	}
 	if !strings.Contains(got, "release-assets.githubusercontent.com/x/y") {
-		t.Errorf("主机与路径应保留：%q", got)
+		t.Errorf("host and path should be kept: %q", got)
 	}
 	if !strings.Contains(got, "TLS handshake timeout") {
-		t.Errorf("原始错误原因应保留：%q", got)
+		t.Errorf("original error cause should be kept: %q", got)
 	}
 }
 
-// 代理与超时是两种不同处置方式，提示必须区分
+// proxy vs timeout need different handling — the hints must distinguish them
 func TestNetworkHint(t *testing.T) {
 	cases := []struct {
 		msg  string
 		want string
 	}{
-		{"proxyconnect tcp: dial tcp 127.0.0.1:1: connect: connection refused", "代理"},
-		{"net/http: TLS handshake timeout", "超时"},
+		{"proxyconnect tcp: dial tcp 127.0.0.1:1: connect: connection refused", "proxy"},
+		{"net/http: TLS handshake timeout", "timed out"},
 		{"some other failure", ""},
 	}
 	for _, c := range cases {
 		got := networkHint(errors.New(c.msg))
 		if c.want == "" {
 			if got != "" {
-				t.Errorf("%q 不应给出提示，实际 %q", c.msg, got)
+				t.Errorf("%q should not produce a hint, got %q", c.msg, got)
 			}
 			continue
 		}
 		if !strings.Contains(got, c.want) {
-			t.Errorf("%q 的提示应含 %q，实际 %q", c.msg, c.want, got)
+			t.Errorf("hint for %q should contain %q, got %q", c.msg, c.want, got)
 		}
 	}
 }
