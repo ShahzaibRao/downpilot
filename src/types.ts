@@ -127,6 +127,8 @@ export interface PotStatus {
   denoPath: string | null
   filesReady: boolean
   running: boolean
+  /** True if DownPilot started the server (false = external/reused). */
+  isOurs: boolean
   version: string | null
   port: number
 }
