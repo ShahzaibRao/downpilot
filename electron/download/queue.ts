@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DownloadJob, defaultScopeOpts, type Quality, type ProgressEvent, type Tools, type ScopeOpts, type CookieHooks, type PotHooks } from './engine'
+import type { SmartModeConfig } from '../settings'
 
 export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed'
 
@@ -64,7 +65,8 @@ export class QueueManager {
     private notify: (tasks: Task[]) => void,
     private onFinished?: (task: Task) => void,
     private cookies?: CookieHooks | null,
-    private pot?: PotHooks | null
+    private pot?: PotHooks | null,
+    private getSmartMode?: () => SmartModeConfig | null
   ) {
     this.maxConcurrent = 1
     this.load()
@@ -255,7 +257,8 @@ export class QueueManager {
       (e: ProgressEvent) => this.onJobEvent(task.id, e),
       { scope: task.scope, maxItems: task.maxItems, order: task.order, content: task.content ?? 'all' },
       this.cookies ?? null,
-      this.pot ?? null
+      this.pot ?? null,
+      this.getSmartMode ? this.getSmartMode() : null
     )
     this.jobs.set(task.id, job)
     job.start()
