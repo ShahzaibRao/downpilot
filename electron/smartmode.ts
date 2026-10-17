@@ -17,10 +17,19 @@ export const SMART_PLATFORMS = [
 
 export type SmartPlatform = (typeof SMART_PLATFORMS)[number]
 
-/** The currently selected proxy, if any. */
-export function activeProxy(cfg: SmartModeConfig): ProxyEntry | null {
-  if (!cfg.activeProxyId) return null
-  return cfg.proxies.find((p) => p.id === cfg.activeProxyId) ?? null
+/** Proxies in the rotation pool (selected by the user). */
+export function selectedProxies(cfg: SmartModeConfig): ProxyEntry[] {
+  const ids = new Set(cfg.selectedProxyIds ?? [])
+  return (cfg.proxies ?? []).filter((p) => ids.has(p.id))
+}
+
+/** Does the URL's platform match the checked platforms? */
+export function platformMatches(rawUrl: string, platforms: string[]): boolean {
+  if ((platforms ?? []).includes('all')) return true
+  const platform = platformForUrl(rawUrl)
+  if (!platform) return false
+  // 'x' covers twitter.com too (platformForUrl maps both to 'x')
+  return (platforms ?? []).includes(platform)
 }
 
 /**
@@ -41,27 +50,28 @@ export function buildProxyUrl(proxy: ProxyEntry): string | null {
 }
 
 /**
- * Should this URL go through the proxy?
- * Smart Mode must be enabled, an active proxy set, and the URL's platform
- * checked (or 'all').
+ * Round-robin proxy rotator. Each call returns the next proxy in the
+ * user's selected pool, so requests spread across IPs and no single
+ * proxy gets blocked quickly.
  */
-export function shouldUseProxy(rawUrl: string, cfg: SmartModeConfig): boolean {
-  if (!cfg.enabled) return false
-  const proxy = activeProxy(cfg)
-  if (!proxy || !buildProxyUrl(proxy)) return false
-  const platforms = cfg.platforms ?? []
-  if (platforms.includes('all')) return true
-  const platform = platformForUrl(rawUrl)
-  if (!platform) return false
-  // 'x' covers twitter.com too (platformForUrl maps both to 'x')
-  return platforms.includes(platform)
-}
+export class ProxyRotator {
+  private index = 0
 
-/** Proxy URL for a download, or null when Smart Mode doesn't apply. */
-export function proxyUrlForDownload(rawUrl: string, cfg: SmartModeConfig): string | null {
-  if (!shouldUseProxy(rawUrl, cfg)) return null
-  const proxy = activeProxy(cfg)
-  return proxy ? buildProxyUrl(proxy) : null
+  /** Next proxy URL for this download URL, or null if Smart Mode doesn't apply. */
+  nextFor(rawUrl: string, cfg: SmartModeConfig): string | null {
+    if (!cfg.enabled) return null
+    const pool = selectedProxies(cfg)
+    if (pool.length === 0) return null
+    if (!platformMatches(rawUrl, cfg.platforms)) return null
+    const proxy = pool[this.index % pool.length]
+    this.index++
+    return buildProxyUrl(proxy)
+  }
+
+  /** How many proxies are in the pool (for UI/debugging). */
+  poolSize(cfg: SmartModeConfig): number {
+    return selectedProxies(cfg).length
+  }
 }
 
 export interface ProxyTestResult {
