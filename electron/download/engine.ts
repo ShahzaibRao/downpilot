@@ -389,8 +389,6 @@ export class GalleryDlJob {
 
 import { routeUrl, engineLabel, type Engine } from './router'
 import { platformForUrl, isLoginWallError } from '../cookies'
-import { proxyUrlForDownload } from '../smartmode'
-import type { SmartModeConfig } from '../settings'
 
 export interface Tools {
   ytdlp?: string
@@ -411,6 +409,11 @@ export interface PotHooks {
    * Returns the plugin dir for yt-dlp --plugin-dirs, or null to skip.
    */
   ensureForYoutube: () => Promise<string | null>
+}
+
+export interface ProxyHooks {
+  /** Next proxy URL for this download URL (round-robin), or null. */
+  getProxyUrl: (url: string) => string | null
 }
 
 /** youtube.com / youtu.be URLs need the POT server. */
@@ -493,7 +496,7 @@ export class DownloadJob {
     private scopeOpts: ScopeOpts = defaultScopeOpts(),
     private cookies: CookieHooks | null = null,
     private pot: PotHooks | null = null,
-    private smartMode: SmartModeConfig | null = null
+    private proxy: ProxyHooks | null = null
   ) {}
 
   start(): void {
@@ -518,8 +521,16 @@ export class DownloadJob {
     // Announce which engine is trying (UI badge switches on fallback too).
     this.onEvent({ ...blankEvent(this.id), engine: label })
 
-    // Smart Mode: proxy for checked platforms (bandwidth saving + block avoidance).
-    const proxyUrl = this.smartMode ? proxyUrlForDownload(this.url, this.smartMode) : null
+    // Smart Mode: round-robin proxy for checked platforms (spreads load so no
+    // single proxy IP gets blocked quickly).
+    let proxyUrl: string | null = null
+    if (this.proxy) {
+      try {
+        proxyUrl = this.proxy.getProxyUrl(this.url)
+      } catch {
+        proxyUrl = null
+      }
+    }
 
     // Per-platform cookie profile, if the user added one.
     const cookiePlatform = platformForUrl(this.url)
