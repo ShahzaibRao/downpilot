@@ -95,9 +95,30 @@ export interface CookieProfileMeta {
   lastTestOk?: boolean
 }
 
+export interface ProxyConfig {
+  host: string
+  port: number
+  username: string
+  password: string
+}
+
+export interface SmartModeConfig {
+  enabled: boolean
+  proxy: ProxyConfig
+  platforms: string[]
+}
+
+export interface ProxyTestResult {
+  ok: boolean
+  ip?: string
+  status?: number
+  error?: string
+}
+
 export interface Settings {
   downloadDir: string
   maxConcurrent: number
+  smartMode: SmartModeConfig
 }
 
 /** window.dpApi — exposed by electron/preload/index.ts */
@@ -122,6 +143,8 @@ export interface DpApi {
   cookiesRemove(platform: string): Promise<boolean>
   cookiesTest(opts: { platform: string; testUrl: string }): Promise<{ ok: boolean }>
   onCookiesUpdate(cb: (metas: CookieProfileMeta[]) => void): () => void
+  proxyTest(): Promise<ProxyTestResult>
+  proxyTestSite(siteUrl: string): Promise<ProxyTestResult>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
