@@ -237,7 +237,13 @@ function getProspectScheduler(): ProspectScheduler {
           return null
         }
       },
-      getMaxNew: () => DEFAULT_MAX_NEW,
+      getMaxNew: () => {
+        try {
+          return getSettings().maxNewPerCheck
+        } catch {
+          return DEFAULT_MAX_NEW
+        }
+      },
       onCheckDone: (results) => {
         // in-app + native notifications for new content
         const store = getNotificationStore()
