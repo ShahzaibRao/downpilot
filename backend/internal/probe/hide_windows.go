@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-// hideWindow 隐藏子进程控制台窗口，避免探测时闪黑框
+// hideWindow hides the child process console window, so probing doesn't flash a black box
 func hideWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
