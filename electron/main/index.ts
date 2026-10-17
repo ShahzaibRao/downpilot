@@ -434,6 +434,12 @@ ipcMain.handle('pot:stop', async () => {
   return true
 })
 
+ipcMain.handle('pot:forceStop', async () => {
+  const killed = await getPotManager().forceStop()
+  if (!killed) throw new Error('Nothing found listening on :4416')
+  return true
+})
+
 // ---- IPC: settings ----
 
 ipcMain.handle('settings:get', async () => getSettings())
