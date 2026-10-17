@@ -170,14 +170,15 @@ export class ProspectStore {
   }
 
   /** Record a check outcome; 3 consecutive failures → auto-pause. */
-  recordCheck(id: string, ok: boolean, error?: string): void {
+  recordCheck(id: string, ok: boolean, error?: string, warning?: string): void {
     const p = this.get(id)
     if (!p) return
     p.lastCheck = new Date().toISOString()
     if (ok) {
       p.failCount = 0
       if (p.status !== 'paused') p.status = 'ok'
-      p.lastError = null
+      // preserve per-link warnings (e.g. one platform flaky, others fine)
+      p.lastError = warning ? `Warning: ${warning}` : null
     } else {
       p.failCount++
       p.lastError = error ?? 'Check failed'
