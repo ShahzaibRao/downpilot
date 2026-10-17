@@ -64,6 +64,16 @@ export class PotManager {
     return path.join(path.dirname(this.sourceDir), 'plugins')
   }
 
+  /** Are the server files set up (copied + `deno install` done)? */
+  filesReady(): boolean {
+    try {
+      const marker = fs.readFileSync(versionMarker(), 'utf8').trim()
+      return marker === POT_VERSION && fs.existsSync(path.join(serverHome(), 'node_modules'))
+    } catch {
+      return false
+    }
+  }
+
   /**
    * Ensure a POT server is reachable. Starts ours if the port is free.
    * Returns true when yt-dlp should load the POT plugin.
