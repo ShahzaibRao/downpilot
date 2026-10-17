@@ -47,7 +47,7 @@
         <button v-else class="btn secondary small" @click="setStatus(p.id, 'paused')">Pause</button>
         <button class="btn secondary small" @click="remove(p.id)">Remove</button>
       </div>
-      <div v-if="p.lastError" class="muted" style="font-size: 12px; color: #f87171;">{{ p.lastError }}{{ p.failCount > 0 ? ` (${p.failCount}/3)` : '' }}</div>
+      <div v-if="p.lastError" class="muted" style="font-size: 12px;" :style="{ color: p.lastError.startsWith('Warning:') ? '#fbbf24' : '#f87171' }">{{ p.lastError }}{{ p.failCount > 0 && !p.lastError.startsWith('Warning:') ? ` (${p.failCount}/3)` : '' }}</div>
       <div class="muted" style="font-size: 12px; margin-top: 4px;">
         Folder: prospects/{{ p.folder }}
         <span v-if="p.lastCheck"> · Last check: {{ formatTime(p.lastCheck) }}</span>
