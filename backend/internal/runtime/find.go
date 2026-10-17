@@ -25,16 +25,20 @@ import (
 type Kind string
 
 const (
-	KindYtDlp   Kind = "yt-dlp"
-	KindFFmpeg  Kind = "ffmpeg"
-	KindFFprobe Kind = "ffprobe"
+	KindYtDlp     Kind = "yt-dlp"
+	KindFFmpeg    Kind = "ffmpeg"
+	KindFFprobe   Kind = "ffprobe"
+	KindGalleryDl Kind = "gallery-dl"
+	KindDeno      Kind = "deno"
 )
 
 // Kinds 全部依赖，顺序即界面展示顺序
-var Kinds = []Kind{KindYtDlp, KindFFmpeg, KindFFprobe}
+var Kinds = []Kind{KindYtDlp, KindFFmpeg, KindFFprobe, KindGalleryDl, KindDeno}
 
-// Optional 标记非必需依赖：ffprobe 只在部分后处理场景用到
-var Optional = map[Kind]bool{KindFFprobe: true}
+// Optional 标记非必需依赖：ffprobe 只在部分后处理场景用到；
+// gallery-dl 是 yt-dlp 的回退引擎（缺失只影响图片类下载）；
+// deno 只在 YouTube 下载时需要（POT 服务）。
+var Optional = map[Kind]bool{KindFFprobe: true, KindGalleryDl: true, KindDeno: true}
 
 // BinaryName 工具在磁盘上的文件名
 func BinaryName(kind Kind) string {
