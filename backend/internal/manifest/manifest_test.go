@@ -2,7 +2,10 @@ package manifest
 
 import (
 	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/ShahzaibRao/downpilot/backend/internal/fetch"
 )
 
 var reSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -58,11 +61,17 @@ func TestTasksForCurrentPlatform(t *testing.T) {
 		if !reSHA256.MatchString(task.SHA256) {
 			t.Errorf("%s 缺少有效校验值：%q", task.Tool, task.SHA256)
 		}
-		// ffmpeg / ffprobe 走 gzip 单文件，yt-dlp 是裸二进制
+		// ffmpeg / ffprobe 走 gzip 单文件，yt-dlp / gallery-dl 是裸二进制，deno 是 zip 包
 		if task.Tool == "yt-dlp" && task.Gzip {
 			t.Error("yt-dlp 不应标记为 gzip")
 		}
-		if task.Tool != "yt-dlp" && !task.Gzip {
+		if task.Tool == "gallery-dl" && (task.Gzip || task.Zip) {
+			t.Error("gallery-dl 是裸二进制，不应标记为 gzip/zip")
+		}
+		if task.Tool == "deno" && !task.Zip {
+			t.Error("deno 应标记为 zip")
+		}
+		if (task.Tool == "ffmpeg" || task.Tool == "ffprobe") && !task.Gzip {
 			t.Errorf("%s 应标记为 gzip", task.Tool)
 		}
 		seen[task.Tool] = true
@@ -93,5 +102,52 @@ func TestWindowsArm64FfmpegIsSkippedNotFatal(t *testing.T) {
 	if _, err := Tasks("/tmp/x", []string{"ffmpeg"}); err != nil {
 		// 当前平台若不支持，Tasks 允许报错；这里只确认不会 panic
 		t.Logf("当前平台无 ffmpeg 任务：%v", err)
+	}
+}
+
+// win32/x64 必须包含 gallery-dl（裸二进制）与 deno（zip 包，取 deno.exe）
+func TestWin32TasksIncludeGalleryDlAndDeno(t *testing.T) {
+	tasks, err := TasksFor("win32/x64", `C:\tmp\downpilot-runtime\bin`, nil)
+	if err != nil {
+		t.Fatalf("win32/x64 应生成下载任务：%v", err)
+	}
+	byTool := map[string]fetch.Task{}
+	for _, task := range tasks {
+		byTool[task.Tool] = task
+	}
+
+	g, ok := byTool["gallery-dl"]
+	if !ok {
+		t.Fatal("缺少 gallery-dl 任务")
+	}
+	if g.Gzip || g.Zip {
+		t.Error("gallery-dl 是裸二进制，不应标记 gzip/zip")
+	}
+	if !strings.HasSuffix(g.Target, "gallery-dl.exe") {
+		t.Errorf("gallery-dl 目标文件名应为 gallery-dl.exe，实际 %q", g.Target)
+	}
+
+	d, ok := byTool["deno"]
+	if !ok {
+		t.Fatal("缺少 deno 任务")
+	}
+	if !d.Zip || d.ZipInner != "deno.exe" {
+		t.Errorf("deno 应为 zip 包并提取 deno.exe，实际 %+v", d)
+	}
+	if !strings.HasSuffix(d.Target, "deno.exe") {
+		t.Errorf("deno 目标文件名应为 deno.exe，实际 %q", d.Target)
+	}
+}
+
+// linux/arm64 上游无 gallery-dl 构建：应跳过而不是报错
+func TestLinuxArm64SkipsGalleryDl(t *testing.T) {
+	tasks, err := TasksFor("linux/arm64", "/tmp/x", nil)
+	if err != nil {
+		t.Fatalf("linux/arm64 应生成下载任务：%v", err)
+	}
+	for _, task := range tasks {
+		if task.Tool == "gallery-dl" {
+			t.Error("linux/arm64 不应包含 gallery-dl 任务（上游无构建）")
+		}
 	}
 }
