@@ -358,12 +358,15 @@ async function loadSmart() {
 }
 
 async function persistSmart(): Promise<void> {
+  // Deep-clone to plain objects: Vue reactive proxies cannot go through
+  // Electron IPC (structured clone fails with "An object could not be cloned").
+  const plainProxies: ProxyEntry[] = JSON.parse(JSON.stringify(proxies.value))
   await window.dpApi.setSettings({
     smartMode: {
       enabled: smartEnabled.value,
-      proxies: proxies.value,
+      proxies: plainProxies,
       activeProxyId: activeProxyId.value,
-      platforms: smartPlatformsChecked.value
+      platforms: [...smartPlatformsChecked.value]
     }
   })
 }
