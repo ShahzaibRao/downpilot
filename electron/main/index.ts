@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { type Quality, type Tools } from '../download/engine'
 import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
+import { ProspectStore } from '../prospects/store'
+import { SeenStore } from '../prospects/seen'
 import { CookieVault, platformForUrl } from '../cookies'
 import { PotManager } from '../pot'
 import { ProxyRotator, buildProxyUrl, selectedProxies, testProxy, testSite } from '../smartmode'
@@ -176,7 +178,19 @@ async function toolPaths(): Promise<ToolPaths> {
 
 let queue: QueueManager | null = null
 let history: HistoryStore | null = null
+let prospectStore: ProspectStore | null = null
+let seenStore: SeenStore | null = null
 let cookieVault: CookieVault | null = null
+
+function getProspectStore(): ProspectStore {
+  if (!prospectStore) prospectStore = new ProspectStore()
+  return prospectStore
+}
+
+function getSeenStore(): SeenStore {
+  if (!seenStore) seenStore = new SeenStore()
+  return seenStore
+}
 let potManager: PotManager | null = null
 const proxyRotator = new ProxyRotator()
 
@@ -356,6 +370,47 @@ ipcMain.handle('cookies:test', async (_event, opts: { platform: string; testUrl:
     const msg = (err as Error).message.split('\n').find((l) => /ERROR/i.test(l)) ?? 'Cookie test failed'
     throw new Error(msg.trim())
   }
+})
+
+// ---- IPC: Prospects (Phase 3a) ----
+
+ipcMain.handle('prospects:list', async () => {
+  return getProspectStore().list()
+})
+
+ipcMain.handle('prospects:add', async (_event, url: string, name?: string) => {
+  if (!url || !/^https?:\/\//i.test(url)) throw new Error('Enter a valid http(s) profile URL')
+  return getProspectStore().add(url, name)
+})
+
+ipcMain.handle('prospects:addLink', async (_event, prospectId: string, url: string) => {
+  if (!url || !/^https?:\/\//i.test(url)) throw new Error('Enter a valid http(s) URL')
+  return getProspectStore().addLink(prospectId, url)
+})
+
+ipcMain.handle('prospects:removeLink', async (_event, prospectId: string, linkId: string) => {
+  getProspectStore().removeLink(prospectId, linkId)
+  return true
+})
+
+ipcMain.handle('prospects:remove', async (_event, id: string) => {
+  getProspectStore().remove(id)
+  getSeenStore().clearProspect(id)
+  return true
+})
+
+ipcMain.handle('prospects:rename', async (_event, id: string, name: string) => {
+  return getProspectStore().rename(id, name)
+})
+
+ipcMain.handle('prospects:setStatus', async (_event, id: string, status: 'ok' | 'paused' | 'error') => {
+  getProspectStore().setStatus(id, status)
+  return true
+})
+
+ipcMain.handle('prospects:unpause', async (_event, id: string) => {
+  getProspectStore().unpause(id)
+  return true
 })
 
 // ---- IPC: Smart Mode proxy tests (Phase 2c) ----
