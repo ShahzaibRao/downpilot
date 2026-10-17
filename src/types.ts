@@ -110,11 +110,13 @@ export interface ProxyEntry {
 export interface SmartModeConfig {
   enabled: boolean
   proxies: ProxyEntry[]
-  activeProxyId: string | null
+  selectedProxyIds: string[]
   platforms: string[]
 }
 
-export interface ProxyTestResult {
+export interface ProxyTestItemResult {
+  id: string
+  name: string
   ok: boolean
   ip?: string
   status?: number
@@ -123,6 +125,7 @@ export interface ProxyTestResult {
 
 export interface PotStatus {
   denoPath: string | null
+  filesReady: boolean
   running: boolean
   version: string | null
   port: number
@@ -156,8 +159,8 @@ export interface DpApi {
   cookiesRemove(platform: string): Promise<boolean>
   cookiesTest(opts: { platform: string; testUrl: string }): Promise<{ ok: boolean }>
   onCookiesUpdate(cb: (metas: CookieProfileMeta[]) => void): () => void
-  proxyTest(): Promise<ProxyTestResult>
-  proxyTestSite(siteUrl: string): Promise<ProxyTestResult>
+  proxyTest(): Promise<ProxyTestItemResult[]>
+  proxyTestSite(siteUrl: string): Promise<ProxyTestItemResult[]>
   potStatus(): Promise<PotStatus>
   potStart(): Promise<boolean>
   potStop(): Promise<boolean>
