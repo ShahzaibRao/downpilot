@@ -38,6 +38,8 @@ func main() {
 	// 放这里是因为 runtime 不能 import manifest（会形成 import cycle），
 	// 而 CLI 同时依赖两者。
 	rt.MinVersions[rt.KindYtDlp] = manifest.MinYtDlpVersion()
+	rt.MinVersions[rt.KindGalleryDl] = manifest.MinGalleryDlVersion()
+	rt.MinVersions[rt.KindDeno] = manifest.MinDenoVersion()
 
 	if len(os.Args) < 2 {
 		usage()
@@ -61,7 +63,7 @@ func main() {
 func usage() {
 	fmt.Fprint(os.Stderr, `dp-deps — DownPilot 依赖探测与下载
 
-  detect  探测 yt-dlp / ffmpeg / ffprobe，输出 JSON 结果
+  detect  探测 yt-dlp / ffmpeg / ffprobe / gallery-dl / deno，输出 JSON 结果
   fetch   下载缺失的依赖到托管目录（SHA-256 校验）
   version 输出版本与平台
 
