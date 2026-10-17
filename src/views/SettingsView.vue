@@ -6,6 +6,15 @@
       <h3>Downloads</h3>
       <p class="muted">Folder: <code>{{ downloadDir }}</code></p>
       <button class="btn secondary" @click="changeDir">Change folder…</button>
+      <p class="muted" style="margin-top: 12px;">
+        Simultaneous downloads:
+        <select v-model.number="maxConcurrent" class="quality" @change="saveConcurrent">
+          <option :value="1">1</option>
+          <option :value="2">2</option>
+          <option :value="3">3</option>
+          <option :value="4">4</option>
+        </select>
+      </p>
     </div>
 
     <div class="card">
@@ -88,10 +97,19 @@ function onProgress(evt: DepsProgressEvent) {
 }
 
 const downloadDir = ref('')
+const maxConcurrent = ref(1)
 
 async function loadSettings() {
   try {
-    downloadDir.value = (await window.dpApi.getSettings()).downloadDir
+    const s = await window.dpApi.getSettings()
+    downloadDir.value = s.downloadDir
+    maxConcurrent.value = s.maxConcurrent
+  } catch { /* ignore */ }
+}
+
+async function saveConcurrent() {
+  try {
+    maxConcurrent.value = (await window.dpApi.setSettings({ maxConcurrent: maxConcurrent.value })).maxConcurrent
   } catch { /* ignore */ }
 }
 
