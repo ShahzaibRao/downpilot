@@ -7,6 +7,7 @@ import { type Quality, type Tools } from '../download/engine'
 import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
 import { CookieVault, platformForUrl } from '../cookies'
+import { PotManager } from '../pot'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -128,12 +129,22 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+app.on('before-quit', () => {
+  // Phase 2b: kill the Deno POT server (if running) on app quit.
+  try {
+    potManager?.stop()
+  } catch {
+    /* best-effort */
+  }
+})
+
 // ---- IPC: downloads — queue (Phase 1c) ----
 
 interface ToolPaths {
   ytdlp?: string
   ffmpegDir?: string
   gallerydl?: string
+  deno?: string
 }
 
 let toolPathsCache: ToolPaths | null = null
@@ -156,7 +167,8 @@ async function toolPaths(): Promise<ToolPaths> {
   toolPathsCache = {
     ytdlp: pick('yt-dlp'),
     ffmpegDir: ffmpeg ? path.dirname(ffmpeg) : undefined,
-    gallerydl: pick('gallery-dl')
+    gallerydl: pick('gallery-dl'),
+    deno: pick('deno')
   }
   return toolPathsCache
 }
@@ -164,6 +176,24 @@ async function toolPaths(): Promise<ToolPaths> {
 let queue: QueueManager | null = null
 let history: HistoryStore | null = null
 let cookieVault: CookieVault | null = null
+let potManager: PotManager | null = null
+
+/** Vendored POT server source: repo in dev, app resources in prod. */
+function potSourceDir(): string {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'pot', 'server')
+  return path.join(app.getAppPath(), 'pot', 'server')
+}
+
+function getPotManager(): PotManager {
+  if (!potManager) {
+    potManager = new PotManager(
+      potSourceDir(),
+      async () => (await toolPaths()).deno ?? null,
+      (msg) => console.log(msg)
+    )
+  }
+  return potManager
+}
 
 function getHistory(): HistoryStore {
   if (!history) {
@@ -209,6 +239,12 @@ function getQueue(): QueueManager {
       {
         getCookiesFile: (platform: string) => getCookieVault().materialize(platform),
         markExpired: (platform: string) => getCookieVault().markExpired(platform)
+      },
+      {
+        ensureForYoutube: async () => {
+          const ok = await getPotManager().ensureRunning()
+          return ok ? getPotManager().pluginDir() : null
+        }
       }
     )
     // settings is the source of truth for concurrency
