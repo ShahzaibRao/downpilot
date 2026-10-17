@@ -29,7 +29,7 @@ export const CHECK_INTERVAL_MS = 60 * 60 * 1000
 export const DEFAULT_MAX_NEW = 20
 
 /**
- * List recent items for a profile/channel URL via yt-dlp flat playlist.
+ * List recent items for a profile URL via yt-dlp flat playlist.
  * Returns up to `limit` items (newest first).
  */
 export async function listItems(
@@ -69,6 +69,148 @@ export async function listItems(
     items.push({ id: id.trim(), title: (title || id).trim(), url: itemUrl.trim() })
   }
   return items
+}
+
+/**
+ * Fallback listing via gallery-dl (Phase 1b rule: yt-dlp → gallery-dl → error).
+ * Uses --dump-json; parses extractor-specific IDs into post URLs.
+ * This is what catches image posts on Instagram/X/Snapchat that yt-dlp
+ * can't list or download.
+ */
+export async function listItemsGalleryDl(
+  gdlPath: string,
+  url: string,
+  platform: string,
+  limit: number,
+  cookiesFile?: string | null,
+  proxyUrl?: string | null
+): Promise<ProspectItem[]> {
+  const args = [
+    '--dump-json',
+    '--no-download',
+    '--range', `1-${limit}`,
+    '--no-check-certificates',
+    url
+  ]
+  if (cookiesFile) args.push('--cookies', cookiesFile)
+  if (proxyUrl) args.push('--proxy', proxyUrl)
+
+  const { stdout } = await execFileAsync(gdlPath, args, {
+    timeout: 120000,
+    maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true
+  })
+
+  const username = extractUsername(url)
+  const items: ProspectItem[] = []
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || !trimmed.startsWith('{')) continue
+    try {
+      const obj = JSON.parse(trimmed)
+      const parsed = parseGalleryItem(obj, platform, username)
+      if (parsed) items.push(parsed)
+    } catch {
+      /* skip malformed JSON lines */
+    }
+  }
+  return items.slice(0, limit)
+}
+
+/** username/handle from a profile URL (for building TikTok video URLs). */
+function extractUsername(url: string): string {
+  try {
+    const u = new URL(url)
+    const segs = u.pathname.split('/').filter(Boolean)
+    const at = segs.find((s) => s.startsWith('@'))
+    if (at) return at.slice(1)
+    return segs[0] || ''
+  } catch {
+    return ''
+  }
+}
+
+/** Parse one gallery-dl --dump-json object into a ProspectItem. */
+export function parseGalleryItem(obj: any, platform: string, username: string): ProspectItem | null {
+  const str = (v: any) => (v == null ? '' : String(v))
+  if (platform === 'instagram') {
+    const shortcode = str(obj.shortcode)
+    if (!shortcode) return null
+    return {
+      id: `ig_${shortcode}`,
+      title: str(obj.title || obj.caption || shortcode).slice(0, 100),
+      url: `https://www.instagram.com/p/${shortcode}/`
+    }
+  }
+  if (platform === 'tiktok') {
+    const id = str(obj.id)
+    if (!id) return null
+    return {
+      id: `tt_${id}`,
+      title: str(obj.title || obj.desc || id).slice(0, 100),
+      url: username
+        ? `https://www.tiktok.com/@${username}/video/${id}`
+        : `https://www.tiktok.com/video/${id}`
+    }
+  }
+  if (platform === 'x') {
+    const id = str(obj.tweet_id || obj.id)
+    if (!id) return null
+    return {
+      id: `x_${id}`,
+      title: str(obj.content || obj.title || id).slice(0, 100),
+      url: `https://x.com/i/status/${id}`
+    }
+  }
+  if (platform === 'snapchat') {
+    const id = str(obj.id || obj.snap_id)
+    if (!id) return null
+    return {
+      id: `sc_${id}`,
+      title: str(obj.title || id).slice(0, 100),
+      url: str(obj.webpage_url)
+    }
+  }
+  // generic fallback
+  const id = str(obj.id || obj.post_id)
+  if (!id) return null
+  return {
+    id: `${platform}_${id}`,
+    title: str(obj.title || id).slice(0, 100),
+    url: str(obj.webpage_url)
+  }
+}
+
+/**
+ * List with fallback: yt-dlp first, gallery-dl second.
+ * Throws combined error only if BOTH fail (Phase 1b rule).
+ */
+export async function listWithFallback(
+  tools: Tools,
+  url: string,
+  platform: string,
+  limit: number,
+  cookiesFile?: string | null,
+  proxyUrl?: string | null
+): Promise<ProspectItem[]> {
+  let ytdlpErr: Error | null = null
+  if (tools.ytdlp) {
+    try {
+      return await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
+    } catch (e) {
+      ytdlpErr = e as Error
+    }
+  }
+  if (tools.gallerydl) {
+    try {
+      return await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
+    } catch (e) {
+      const gdlMsg = cleanError((e as Error).message)
+      const ytdlpMsg = ytdlpErr ? cleanError(ytdlpErr.message) : 'yt-dlp not available'
+      throw new Error(`${platform}: yt-dlp: ${ytdlpMsg} | gallery-dl: ${gdlMsg}`)
+    }
+  }
+  throw ytdlpErr ?? new Error('No listing engine available')
 }
 
 export interface SchedulerDeps {
@@ -140,7 +282,7 @@ export class ProspectScheduler {
 
   private async checkProspect(p: Prospect): Promise<CheckResult> {
     const tools = await this.deps.getTools()
-    if (!tools.ytdlp) throw new Error('yt-dlp not found')
+    if (!tools.ytdlp && !tools.gallerydl) throw new Error('No download engine found')
     const seen = this.deps.getSeen()
     const queue = this.deps.getQueue()
     const maxNew = this.deps.getMaxNew()
@@ -155,7 +297,8 @@ export class ProspectScheduler {
       try {
         const cookiesFile = this.deps.getCookiesFile(link.platform)
         const proxyUrl = this.deps.getProxyUrl(link.url)
-        const items = await listItems(tools.ytdlp, link.url, maxNew, cookiesFile, proxyUrl)
+        // Phase 1b rule: yt-dlp → gallery-dl → error (catches image posts)
+        const items = await listWithFallback(tools, link.url, link.platform, maxNew, cookiesFile, proxyUrl)
 
         for (const item of items) {
           if (newCount >= maxNew) break
