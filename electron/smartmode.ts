@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { SmartModeConfig } from './settings'
+import type { ProxyEntry, SmartModeConfig } from './settings'
 import { platformForUrl } from './cookies'
 
 const execFileAsync = promisify(execFile)
@@ -17,36 +17,51 @@ export const SMART_PLATFORMS = [
 
 export type SmartPlatform = (typeof SMART_PLATFORMS)[number]
 
+/** The currently selected proxy, if any. */
+export function activeProxy(cfg: SmartModeConfig): ProxyEntry | null {
+  if (!cfg.activeProxyId) return null
+  return cfg.proxies.find((p) => p.id === cfg.activeProxyId) ?? null
+}
+
 /**
- * Build a proxy URL from config. Returns null when host is empty.
- * Format: http://user:pass@host:port (credentials URL-encoded).
+ * Build a proxy URL from a proxy entry. Returns null when host is empty.
+ * Format: <protocol>://user:pass@host:port (credentials URL-encoded).
  */
-export function buildProxyUrl(cfg: SmartModeConfig): string | null {
-  const host = cfg.proxy.host.trim()
+export function buildProxyUrl(proxy: ProxyEntry): string | null {
+  const host = proxy.host.trim()
   if (!host) return null
-  const port = cfg.proxy.port > 0 && cfg.proxy.port < 65536 ? cfg.proxy.port : 8080
-  const user = encodeURIComponent(cfg.proxy.username.trim())
-  const pass = encodeURIComponent(cfg.proxy.password)
+  const port = proxy.port > 0 && proxy.port < 65536 ? proxy.port : 8080
+  const user = encodeURIComponent(proxy.username.trim())
+  const pass = encodeURIComponent(proxy.password)
   const auth = user ? `${user}:${pass}@` : ''
   // strip any scheme the user pasted
-  const cleanHost = host.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
-  return `http://${auth}${cleanHost}:${port}`
+  const cleanHost = host.replace(/^https?:\/\//i, '').replace(/^socks[45]?:\/\//i, '').replace(/\/.*$/, '')
+  const protocol = proxy.protocol ?? 'http'
+  return `${protocol}://${auth}${cleanHost}:${port}`
 }
 
 /**
  * Should this URL go through the proxy?
- * Smart Mode must be enabled, a proxy configured, and the URL's platform
+ * Smart Mode must be enabled, an active proxy set, and the URL's platform
  * checked (or 'all').
  */
 export function shouldUseProxy(rawUrl: string, cfg: SmartModeConfig): boolean {
   if (!cfg.enabled) return false
-  if (!buildProxyUrl(cfg)) return false
+  const proxy = activeProxy(cfg)
+  if (!proxy || !buildProxyUrl(proxy)) return false
   const platforms = cfg.platforms ?? []
   if (platforms.includes('all')) return true
   const platform = platformForUrl(rawUrl)
   if (!platform) return false
   // 'x' covers twitter.com too (platformForUrl maps both to 'x')
   return platforms.includes(platform)
+}
+
+/** Proxy URL for a download, or null when Smart Mode doesn't apply. */
+export function proxyUrlForDownload(rawUrl: string, cfg: SmartModeConfig): string | null {
+  if (!shouldUseProxy(rawUrl, cfg)) return null
+  const proxy = activeProxy(cfg)
+  return proxy ? buildProxyUrl(proxy) : null
 }
 
 export interface ProxyTestResult {
