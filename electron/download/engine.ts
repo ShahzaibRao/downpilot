@@ -103,6 +103,8 @@ export interface DownloadOptions {
   cookiesFile?: string
   /** Extra yt-dlp plugin dirs (POT provider for YouTube). */
   pluginDirs?: string
+  /** Proxy URL for Smart Mode (http://user:pass@host:port). */
+  proxyUrl?: string
 }
 
 export type DlStatus = 'downloading' | 'merging' | 'done' | 'error'
@@ -163,6 +165,7 @@ export class YtDlpJob {
       ...this.scopeArgs(),
       ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
       ...(this.opts.pluginDirs ? ['--plugin-dirs', this.opts.pluginDirs] : []),
+      ...(this.opts.proxyUrl ? ['--proxy', this.opts.proxyUrl] : []),
       this.opts.url
     ]
 
@@ -281,6 +284,8 @@ export interface GalleryDlOptions {
   maxItems: number
   /** Netscape-format cookies file (per-platform profile), if any. */
   cookiesFile?: string
+  /** Proxy URL for Smart Mode (http://user:pass@host:port). */
+  proxyUrl?: string
 }
 
 /**
@@ -307,6 +312,7 @@ export class GalleryDlJob {
       '--range',
       `1-${Math.max(1, this.opts.maxItems)}`,
       ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
+      ...(this.opts.proxyUrl ? ['--proxy', this.opts.proxyUrl] : []),
       this.opts.url
     ]
     this.proc = spawn(this.opts.gallerydlPath, args, {
@@ -383,6 +389,8 @@ export class GalleryDlJob {
 
 import { routeUrl, engineLabel, type Engine } from './router'
 import { platformForUrl, isLoginWallError } from '../cookies'
+import { buildProxyUrl, shouldUseProxy } from '../smartmode'
+import type { SmartModeConfig } from '../settings'
 
 export interface Tools {
   ytdlp?: string
@@ -484,7 +492,8 @@ export class DownloadJob {
     private onEvent: (e: ProgressEvent) => void,
     private scopeOpts: ScopeOpts = defaultScopeOpts(),
     private cookies: CookieHooks | null = null,
-    private pot: PotHooks | null = null
+    private pot: PotHooks | null = null,
+    private smartMode: SmartModeConfig | null = null
   ) {}
 
   start(): void {
@@ -508,6 +517,12 @@ export class DownloadJob {
     }
     // Announce which engine is trying (UI badge switches on fallback too).
     this.onEvent({ ...blankEvent(this.id), engine: label })
+
+    // Smart Mode: proxy for checked platforms (bandwidth saving + block avoidance).
+    let proxyUrl: string | null = null
+    if (this.smartMode && shouldUseProxy(this.url, this.smartMode)) {
+      proxyUrl = buildProxyUrl(this.smartMode)
+    }
 
     // Per-platform cookie profile, if the user added one.
     const cookiePlatform = platformForUrl(this.url)
@@ -578,7 +593,8 @@ export class DownloadJob {
           scopeOpts: this.scopeOpts,
           playlistItems,
           ...(cookiesFile ? { cookiesFile } : {}),
-          ...(pluginDirs ? { pluginDirs } : {})
+          ...(pluginDirs ? { pluginDirs } : {}),
+          ...(proxyUrl ? { proxyUrl } : {})
         },
         sink
       )
@@ -592,7 +608,8 @@ export class DownloadJob {
           outDir: this.outDir,
           gallerydlPath: bin,
           maxItems: this.scopeOpts.maxItems,
-          ...(cookiesFile ? { cookiesFile } : {})
+          ...(cookiesFile ? { cookiesFile } : {}),
+          ...(proxyUrl ? { proxyUrl } : {})
         },
         sink
       )
