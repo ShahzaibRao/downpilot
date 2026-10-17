@@ -122,17 +122,27 @@ export async function listItemsGalleryDl(
 
   const username = extractUsername(url)
   const items: ProspectItem[] = []
+  let rawLines = 0
+  let jsonLines = 0
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim()
-    if (!trimmed || !trimmed.startsWith('{')) continue
+    if (!trimmed) continue
+    rawLines++
+    if (!trimmed.startsWith('{')) continue
+    jsonLines++
     try {
       const obj = JSON.parse(trimmed)
+      // debug: log first object's keys so we can fix the parser
+      if (jsonLines === 1) {
+        log(`gallery-dl sample keys for ${platform}: ${Object.keys(obj).slice(0, 15).join(', ')}`)
+      }
       const parsed = parseGalleryItem(obj, platform, username)
       if (parsed) items.push(parsed)
     } catch {
       /* skip malformed JSON lines */
     }
   }
+  log(`gallery-dl raw: ${rawLines} lines, ${jsonLines} JSON, ${items.length} parsed`)
   return items.slice(0, limit)
 }
 
