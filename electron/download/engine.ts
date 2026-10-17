@@ -55,16 +55,38 @@ function killTree(proc: ChildProcess | null): void {
 
 export type Scope = 'single' | 'playlist' | 'channel'
 export type Order = 'latest' | 'oldest' | 'popular'
+/** YouTube channel content filter (ignored for non-YouTube URLs). */
+export type ContentFilter = 'all' | 'videos' | 'shorts'
 
 export interface ScopeOpts {
   scope: Scope
   /** Max items for playlist/channel (default 50). */
   maxItems: number
   order: Order
+  content: ContentFilter
 }
 
 export function defaultScopeOpts(): ScopeOpts {
-  return { scope: 'single', maxItems: 50, order: 'latest' }
+  return { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }
+}
+
+/**
+ * Rewrite a YouTube channel URL to its /videos or /shorts tab.
+ * Only touches channel-like URLs (/@handle, /channel/, /c/, /user/);
+ * playlists, watch URLs and non-YouTube links pass through unchanged.
+ */
+export function applyYoutubeContent(url: string, content: ContentFilter): string {
+  if (content === 'all') return url
+  const lower = url.toLowerCase()
+  if (!/youtube\.com/.test(lower) || /youtu\.be/.test(lower)) return url
+  if (!/\/(channel|c|user|@)/.test(lower)) return url
+  const tab = content === 'shorts' ? 'shorts' : 'videos'
+  const m = url.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/)
+  if (!m) return url
+  const base = m[1]
+    .replace(/\/$/, '')
+    .replace(/\/(videos|shorts|streams|featured|playlists|community|about)$/i, '')
+  return `${base}/${tab}${m[2] ?? ''}${m[3] ?? ''}`
 }
 
 export interface DownloadOptions {
@@ -471,10 +493,15 @@ export class DownloadJob {
         return
       }
       // Popular order needs the two-pass: resolve indices first.
+      // Content filter (YouTube channel → /videos or /shorts tab).
+      const effectiveUrl =
+        this.scopeOpts.scope === 'channel'
+          ? applyYoutubeContent(this.url, this.scopeOpts.content)
+          : this.url
       let playlistItems: number[] | undefined
       if (this.scopeOpts.scope !== 'single' && this.scopeOpts.order === 'popular') {
         this.onEvent({ ...blankEvent(this.id), engine: label, filename: 'Finding most popular videos…' })
-        playlistItems = await resolvePopularIndices(bin, this.url, this.scopeOpts.maxItems)
+        playlistItems = await resolvePopularIndices(bin, effectiveUrl, this.scopeOpts.maxItems)
         if (this.cancelled) return
         if (!playlistItems) {
           // dump failed → fall back to latest order rather than erroring
@@ -484,7 +511,7 @@ export class DownloadJob {
       const job = new YtDlpJob(
         this.id,
         {
-          url: this.url,
+          url: effectiveUrl,
           outDir: this.outDir,
           quality: this.quality,
           ytdlpPath: bin,
