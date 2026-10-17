@@ -84,6 +84,15 @@ contextBridge.exposeInMainWorld('dpApi', {
   prospectsCheckNow: () => ipcRenderer.invoke('prospects:checkNow'),
   onProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.on('prospects:checkDone', cb),
   offProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.removeListener('prospects:checkDone', cb),
+  // notifications (Phase 3c)
+  notifyList: () => ipcRenderer.invoke('notify:list'),
+  notifyMarkRead: (id: string) => ipcRenderer.invoke('notify:markRead', id),
+  notifyMarkAllRead: () => ipcRenderer.invoke('notify:markAllRead'),
+  notifyClear: () => ipcRenderer.invoke('notify:clear'),
+  onNotifyUpdate: (cb: (e: any, items: any[]) => void) => ipcRenderer.on('notify:update', cb),
+  offNotifyUpdate: (cb: (e: any, items: any[]) => void) => ipcRenderer.removeListener('notify:update', cb),
+  // shell (Phase 3c)
+  shellOpenProspectFolder: (prospectId: string) => ipcRenderer.invoke('shell:openProspectFolder', prospectId),
 
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
