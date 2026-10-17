@@ -48,11 +48,14 @@ export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed'
 
 export type Scope = 'single' | 'playlist' | 'channel'
 export type Order = 'latest' | 'oldest' | 'popular'
+/** YouTube channel content filter (ignored for non-YouTube URLs). */
+export type ContentFilter = 'all' | 'videos' | 'shorts'
 
 export interface ScopeOpts {
   scope: Scope
   maxItems: number
   order: Order
+  content: ContentFilter
 }
 
 export interface QueueTask extends ScopeOpts {
