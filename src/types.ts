@@ -87,6 +87,14 @@ export interface HistoryEntry {
   completedAt: number
 }
 
+export interface CookieProfileMeta {
+  platform: string
+  addedAt: number
+  expired: boolean
+  lastTestedAt?: number
+  lastTestOk?: boolean
+}
+
 export interface Settings {
   downloadDir: string
   maxConcurrent: number
@@ -109,6 +117,11 @@ export interface DpApi {
   historyList(): Promise<HistoryEntry[]>
   historyClear(): Promise<boolean>
   onHistoryUpdate(cb: (entries: HistoryEntry[]) => void): () => void
+  cookiesList(): Promise<CookieProfileMeta[]>
+  cookiesAdd(opts: { platform: string; content: string }): Promise<CookieProfileMeta>
+  cookiesRemove(platform: string): Promise<boolean>
+  cookiesTest(opts: { platform: string; testUrl: string }): Promise<{ ok: boolean }>
+  onCookiesUpdate(cb: (metas: CookieProfileMeta[]) => void): () => void
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
