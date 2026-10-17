@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('dpApi', {
   potStatus: () => ipcRenderer.invoke('pot:status'),
   potStart: () => ipcRenderer.invoke('pot:start'),
   potStop: () => ipcRenderer.invoke('pot:stop'),
+  potForceStop: () => ipcRenderer.invoke('pot:forceStop'),
 
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
