@@ -1,4 +1,4 @@
-// Package cli 输出 NDJSON：stdout 只放结构化结果，stderr 放日志文本。
+// Package cli outputs NDJSON: stdout carries only structured results, stderr carries log text.
 package cli
 
 import (
@@ -12,7 +12,7 @@ var (
 	mu sync.Mutex
 )
 
-// Emit 把任意结构序列化为一行 JSON 写到 stdout
+// Emit serializes any structure as one JSON line on stdout
 func Emit(v any) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -23,14 +23,14 @@ func Emit(v any) {
 	fmt.Fprintln(os.Stdout, string(line))
 }
 
-// Log 写一行诊断日志到 stderr（Electron 侧收进日志文件）
+// Log writes one diagnostic log line to stderr (the Electron side collects it into the log file)
 func Log(msg string) {
 	fmt.Fprintln(os.Stderr, "[deps] "+msg)
 }
 
-// Fail 输出错误事件并结束进程
+// Fail prints an error event and exits the process
 func Fail(msg string) {
 	Emit(map[string]string{"event": "error", "message": msg})
-	Log("错误：" + msg)
+	Log("error: " + msg)
 	os.Exit(1)
 }
