@@ -44,8 +44,28 @@ export interface DownloadProgress {
   error?: string
 }
 
+export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed'
+
+export interface QueueTask {
+  id: string
+  url: string
+  quality: Quality
+  status: TaskStatus
+  engine: string
+  filename: string
+  percent: number
+  downloaded: number
+  total: number | null
+  speed: string
+  eta: string
+  error?: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface Settings {
   downloadDir: string
+  maxConcurrent: number
 }
 
 /** window.dpApi — exposed by electron/preload/index.ts */
@@ -53,9 +73,14 @@ export interface DpApi {
   getDepsStatus(): Promise<DepsStatus>
   fetchDeps(only?: string[]): Promise<boolean>
   onDepsProgress(cb: (evt: DepsProgressEvent) => void): () => void
-  startDownload(opts: { url: string; quality: Quality }): Promise<string>
-  cancelDownload(id: string): Promise<boolean>
-  onDownloadProgress(cb: (evt: DownloadProgress) => void): () => void
+  queueAdd(opts: { url: string; quality: Quality }): Promise<QueueTask>
+  queueList(): Promise<QueueTask[]>
+  queuePause(id: string): Promise<boolean>
+  queueResume(id: string): Promise<boolean>
+  queueRetry(id: string): Promise<boolean>
+  queueCancel(id: string): Promise<boolean>
+  queueClearDone(): Promise<boolean>
+  onQueueUpdate(cb: (tasks: QueueTask[]) => void): () => void
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
