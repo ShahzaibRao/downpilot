@@ -8,6 +8,7 @@ import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
 import { CookieVault, platformForUrl } from '../cookies'
 import { PotManager } from '../pot'
+import { buildProxyUrl, testProxy, testSite } from '../smartmode'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -245,6 +246,13 @@ function getQueue(): QueueManager {
           const ok = await getPotManager().ensureRunning()
           return ok ? getPotManager().pluginDir() : null
         }
+      },
+      () => {
+        try {
+          return getSettings().smartMode ?? null
+        } catch {
+          return null
+        }
       }
     )
     // settings is the source of truth for concurrency
@@ -344,6 +352,27 @@ ipcMain.handle('cookies:test', async (_event, opts: { platform: string; testUrl:
     const msg = (err as Error).message.split('\n').find((l) => /ERROR/i.test(l)) ?? 'Cookie test failed'
     throw new Error(msg.trim())
   }
+})
+
+// ---- IPC: Smart Mode proxy tests (Phase 2c) ----
+
+ipcMain.handle('proxy:test', async () => {
+  const cfg = getSettings().smartMode
+  const proxyUrl = buildProxyUrl(cfg)
+  if (!proxyUrl) throw new Error('Set the proxy host first')
+  // don't log the URL — it contains credentials
+  const result = await testProxy(proxyUrl)
+  if (!result.ok) throw new Error(result.error ?? 'Proxy test failed')
+  return result
+})
+
+ipcMain.handle('proxy:testSite', async (_event, siteUrl: string) => {
+  const cfg = getSettings().smartMode
+  const proxyUrl = buildProxyUrl(cfg)
+  if (!proxyUrl) throw new Error('Set the proxy host first')
+  const result = await testSite(proxyUrl, siteUrl)
+  if (!result.ok) throw new Error(result.error ?? 'Site test failed')
+  return result
 })
 
 // ---- IPC: settings ----
