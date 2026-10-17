@@ -3,6 +3,12 @@
     <h2>Settings</h2>
 
     <div class="card">
+      <h3>Downloads</h3>
+      <p class="muted">Folder: <code>{{ downloadDir }}</code></p>
+      <button class="btn secondary" @click="changeDir">Change folder…</button>
+    </div>
+
+    <div class="card">
       <h3>Runtime dependencies</h3>
       <p class="muted">Managed by the <code>dp-deps</code> sidecar. Missing tools are downloaded with SHA-256 verification.</p>
 
@@ -81,9 +87,25 @@ function onProgress(evt: DepsProgressEvent) {
   }
 }
 
+const downloadDir = ref('')
+
+async function loadSettings() {
+  try {
+    downloadDir.value = (await window.dpApi.getSettings()).downloadDir
+  } catch { /* ignore */ }
+}
+
+async function changeDir() {
+  const dir = await window.dpApi.pickDownloadDir()
+  if (dir) {
+    downloadDir.value = (await window.dpApi.setSettings({ downloadDir: dir })).downloadDir
+  }
+}
+
 onMounted(() => {
   unsubscribe = window.dpApi.onDepsProgress(onProgress)
   refresh()
+  loadSettings()
 })
 
 onUnmounted(() => {
