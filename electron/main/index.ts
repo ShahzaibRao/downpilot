@@ -8,7 +8,7 @@ import { QueueManager, type NewTaskInput } from '../download/queue'
 import { HistoryStore } from '../history'
 import { CookieVault, platformForUrl } from '../cookies'
 import { PotManager } from '../pot'
-import { buildProxyUrl, testProxy, testSite } from '../smartmode'
+import { activeProxy, buildProxyUrl, testProxy, testSite } from '../smartmode'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -356,30 +356,72 @@ ipcMain.handle('cookies:test', async (_event, opts: { platform: string; testUrl:
 
 // ---- IPC: Smart Mode proxy tests (Phase 2c) ----
 
-ipcMain.handle('proxy:test', async () => {
+function requireActiveProxyUrl(): string {
   const cfg = getSettings().smartMode
-  const proxyUrl = buildProxyUrl(cfg)
-  if (!proxyUrl) throw new Error('Set the proxy host first')
+  const proxy = activeProxy(cfg)
+  if (!proxy) throw new Error('Select a proxy first (add one and click "Use")')
+  const proxyUrl = buildProxyUrl(proxy)
+  if (!proxyUrl) throw new Error('The selected proxy has no host — edit it and save')
+  return proxyUrl
+}
+
+ipcMain.handle('proxy:test', async () => {
   // don't log the URL — it contains credentials
-  const result = await testProxy(proxyUrl)
+  const result = await testProxy(requireActiveProxyUrl())
   if (!result.ok) throw new Error(result.error ?? 'Proxy test failed')
   return result
 })
 
 ipcMain.handle('proxy:testSite', async (_event, siteUrl: string) => {
-  const cfg = getSettings().smartMode
-  const proxyUrl = buildProxyUrl(cfg)
-  if (!proxyUrl) throw new Error('Set the proxy host first')
-  const result = await testSite(proxyUrl, siteUrl)
+  const result = await testSite(requireActiveProxyUrl(), siteUrl)
   if (!result.ok) throw new Error(result.error ?? 'Site test failed')
   return result
+})
+
+// ---- IPC: POT server status (Phase 2b, surfaced in Settings) ----
+
+ipcMain.handle('pot:status', async () => {
+  const tools = await toolPaths()
+  const pm = getPotManager()
+  // /ping without starting: reuse PotManager's check via a lightweight fetch
+  let running = false
+  let version: string | null = null
+  try {
+    const res = await fetch('http://127.0.0.1:4416/ping', { signal: AbortSignal.timeout(3000) })
+    if (res.ok) {
+      const data = (await res.json()) as { version?: string }
+      if (typeof data.version === 'string') {
+        running = true
+        version = data.version
+      }
+    }
+  } catch {
+    /* not running */
+  }
+  return {
+    denoPath: tools.deno ?? null,
+    running,
+    version,
+    port: 4416
+  }
+})
+
+ipcMain.handle('pot:start', async () => {
+  const ok = await getPotManager().ensureRunning()
+  if (!ok) throw new Error('POT server failed to start — check the terminal log')
+  return true
+})
+
+ipcMain.handle('pot:stop', async () => {
+  getPotManager().stop()
+  return true
 })
 
 // ---- IPC: settings ----
 
 ipcMain.handle('settings:get', async () => getSettings())
 
-ipcMain.handle('settings:set', async (_event, patch: { downloadDir?: string; maxConcurrent?: number }) => {
+ipcMain.handle('settings:set', async (_event, patch: Partial<import('../settings').Settings>) => {
   const next = setSettings(patch)
   // keep the queue's concurrency in sync with settings
   getQueue().setMaxConcurrent(next.maxConcurrent)
