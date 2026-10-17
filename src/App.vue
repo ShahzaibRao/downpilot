@@ -9,7 +9,34 @@
       >
         {{ tab.label }}
       </button>
+      <span class="spacer"></span>
+      <button class="bell" @click="showNotifications = !showNotifications" title="Notifications">
+        🔔
+        <span v-if="unreadCount > 0" class="badge-count">{{ unreadCount }}</span>
+      </button>
     </nav>
+    <!-- notifications dropdown -->
+    <div v-if="showNotifications" class="notif-panel">
+      <div class="notif-header">
+        <strong>Notifications</strong>
+        <span class="spacer"></span>
+        <button class="btn secondary small" @click="markAllRead">Mark all read</button>
+        <button class="btn secondary small" @click="clearAll">Clear</button>
+        <button class="btn secondary small" @click="showNotifications = false">✕</button>
+      </div>
+      <div v-if="notifications.length === 0" class="muted" style="padding: 12px;">No notifications yet.</div>
+      <div
+        v-for="n in notifications"
+        :key="n.id"
+        class="notif-item"
+        :class="{ unread: !n.read }"
+        @click="openNotification(n)"
+      >
+        <div><strong>{{ n.title }}</strong></div>
+        <div class="muted" style="font-size: 12px;">{{ n.body }}</div>
+        <div class="muted" style="font-size: 11px;">{{ formatTime(n.createdAt) }}</div>
+      </div>
+    </div>
     <main class="view">
       <QuickView v-if="active === 'quick'" />
       <ProspectView v-else-if="active === 'prospect'" />
@@ -20,11 +47,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import QuickView from './views/QuickView.vue'
 import ProspectView from './views/ProspectView.vue'
 import HistoryView from './views/HistoryView.vue'
 import SettingsView from './views/SettingsView.vue'
+import type { AppNotification } from './types'
 
 const tabs = [
   { id: 'quick', label: 'Quick' },
@@ -36,10 +64,63 @@ const tabs = [
 type TabId = (typeof tabs)[number]['id']
 const active = ref<TabId>('quick')
 
+// notifications (Phase 3c)
+const notifications = ref<AppNotification[]>([])
+const showNotifications = ref(false)
+const unreadCount = computed(() => notifications.value.filter((n) => !n.read).length)
+
+async function loadNotifications() {
+  try {
+    notifications.value = await window.dpApi.notifyList()
+  } catch { /* ignore */ }
+}
+
+async function markAllRead() {
+  await window.dpApi.notifyMarkAllRead()
+  await loadNotifications()
+}
+
+async function clearAll() {
+  await window.dpApi.notifyClear()
+  await loadNotifications()
+}
+
+async function openNotification(n: AppNotification) {
+  await window.dpApi.notifyMarkRead(n.id)
+  if (n.prospectId) {
+    try {
+      await window.dpApi.shellOpenProspectFolder(n.prospectId)
+    } catch { /* ignore */ }
+  }
+  await loadNotifications()
+  showNotifications.value = false
+}
+
+function formatTime(ts: number): string {
+  try {
+    return new Date(ts).toLocaleString()
+  } catch {
+    return ''
+  }
+}
+
+function onNotifyUpdate(_e: any, items: AppNotification[]) {
+  notifications.value = items
+}
+
 // lets views request a tab switch (e.g. Quick → Settings)
 window.addEventListener('dp:goto', (e: Event) => {
   const id = (e as CustomEvent).detail as TabId
   if (tabs.some((t) => t.id === id)) active.value = id
+})
+
+onMounted(() => {
+  loadNotifications()
+  window.dpApi.onNotifyUpdate(onNotifyUpdate)
+})
+
+onUnmounted(() => {
+  window.dpApi.offNotifyUpdate(onNotifyUpdate)
 })
 </script>
 
@@ -68,4 +149,35 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 .badge.warn { background: #4a2f12; color: #fbbf24; }
 .badge.err { background: #4a1518; color: #f87171; }
 .badge.info { background: #1e2a4a; color: #93c5fd; }
+.spacer { flex: 1; }
+.bell {
+  position: relative;
+  background: none; border: none; color: #9aa0ab; font-size: 18px;
+  padding: 8px 12px; border-radius: 8px; cursor: pointer;
+}
+.bell:hover { color: #e8eaed; background: #24282f; }
+.badge-count {
+  position: absolute; top: 2px; right: 2px;
+  background: #ef4444; color: white; font-size: 10px;
+  min-width: 16px; height: 16px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+}
+.notif-panel {
+  position: absolute; top: 56px; right: 16px; width: 360px; max-height: 480px;
+  overflow-y: auto; background: #1b1e24; border: 1px solid #2a2e37;
+  border-radius: 12px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.notif-header {
+  display: flex; gap: 6px; align-items: center;
+  padding: 12px; border-bottom: 1px solid #2a2e37;
+  position: sticky; top: 0; background: #1b1e24;
+}
+.notif-item {
+  padding: 12px; border-bottom: 1px solid #24282f; cursor: pointer;
+}
+.notif-item:hover { background: #24282f; }
+.notif-item.unread { background: #1e2a4a; }
+.notif-item.unread:hover { background: #243356; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
 </style>
