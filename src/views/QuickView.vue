@@ -33,16 +33,18 @@
     <div v-for="job in jobs" :key="job.id" class="card">
       <div class="job-head">
         <strong>{{ job.filename || job.url }}</strong>
+        <span v-if="job.engine" class="badge engine">{{ job.engine }}</span>
         <span v-if="job.status === 'downloading'" class="badge info">downloading</span>
         <span v-else-if="job.status === 'merging'" class="badge info">merging…</span>
         <span v-else-if="job.status === 'done'" class="badge ok">done</span>
         <span v-else class="badge err">failed</span>
       </div>
-      <div class="progress">
-        <div class="bar" :style="{ width: Math.min(100, job.percent) + '%' }"></div>
+      <div class="progress" :class="{ indeterminate: job.percent < 0 }">
+        <div class="bar" :style="{ width: Math.min(100, Math.max(0, job.percent)) + '%' }"></div>
       </div>
       <div class="job-meta muted">
-        <span>{{ job.percent.toFixed(1) }}%</span>
+        <span v-if="job.percent >= 0">{{ job.percent.toFixed(1) }}%</span>
+        <span v-else>working…</span>
         <span v-if="job.speed">{{ job.speed }}</span>
         <span v-if="job.eta">ETA {{ job.eta }}</span>
         <span v-if="job.total">{{ formatBytes(job.downloaded) }} / {{ formatBytes(job.total) }}</span>
@@ -83,7 +85,7 @@ async function start() {
     const id = await window.dpApi.startDownload({ url: u, quality: quality.value })
     jobs.value.unshift({
       id, url: u, status: 'downloading', percent: 0,
-      downloaded: 0, total: null, speed: '', eta: '', filename: ''
+      downloaded: 0, total: null, speed: '', eta: '', filename: '', engine: ''
     })
     url.value = ''
   } catch (e) {
@@ -141,6 +143,14 @@ onUnmounted(() => {
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; word-break: break-all; }
 .progress { height: 8px; background: #24282f; border-radius: 4px; overflow: hidden; }
 .progress .bar { height: 100%; background: #2f6fed; border-radius: 4px; transition: width 0.3s; }
+.progress.indeterminate .bar {
+  width: 30% !important;
+  background: linear-gradient(90deg, #2f6fed 25%, #6ea8ff 50%, #2f6fed 75%);
+  background-size: 200% 100%;
+  animation: slide 1.2s linear infinite;
+}
+@keyframes slide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.badge.engine { background: #2a2438; color: #c4b5fd; }
 .job-meta { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 13px; }
 .btn.small { padding: 4px 12px; font-size: 12px; margin-left: auto; }
 a { color: #93c5fd; }
