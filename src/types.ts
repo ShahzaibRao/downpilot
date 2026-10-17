@@ -136,6 +136,7 @@ export interface Prospect {
   name: string
   links: ProspectLink[]
   folder: string
+  quality: Quality
   status: 'ok' | 'paused' | 'error'
   failCount: number
   lastCheck: string | null
@@ -207,7 +208,7 @@ export interface DpApi {
   potForceStop(): Promise<boolean>
   // prospects (Phase 3)
   prospectsList(): Promise<Prospect[]>
-  prospectsAdd(url: string, name?: string): Promise<Prospect>
+  prospectsAdd(url: string, name?: string, quality?: string): Promise<Prospect>
   prospectsAddLink(prospectId: string, url: string): Promise<ProspectLink>
   prospectsRemoveLink(prospectId: string, linkId: string): Promise<boolean>
   prospectsRemove(id: string): Promise<boolean>
@@ -217,6 +218,7 @@ export interface DpApi {
   prospectsCheckNow(): Promise<CheckResult[]>
   prospectsCheckOne(id: string): Promise<CheckResult | null>
   prospectsUpdateLink(prospectId: string, linkId: string, newUrl: string): Promise<ProspectLink>
+  prospectsSetQuality(id: string, quality: Quality): Promise<Prospect>
   onProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   offProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   // notifications (Phase 3c)
