@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('dpApi', {
   prospectsSetStatus: (id: string, status: string) => ipcRenderer.invoke('prospects:setStatus', id, status),
   prospectsUnpause: (id: string) => ipcRenderer.invoke('prospects:unpause', id),
   prospectsCheckNow: () => ipcRenderer.invoke('prospects:checkNow'),
+  prospectsCheckOne: (id: string) => ipcRenderer.invoke('prospects:checkOne', id),
+  prospectsUpdateLink: (prospectId: string, linkId: string, newUrl: string) => ipcRenderer.invoke('prospects:updateLink', prospectId, linkId, newUrl),
   onProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.on('prospects:checkDone', cb),
   offProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.removeListener('prospects:checkDone', cb),
   // notifications (Phase 3c)
