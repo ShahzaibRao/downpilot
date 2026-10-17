@@ -26,12 +26,21 @@
       <div class="row">
         <input v-model="newUrl" class="url-input" placeholder="Profile URL (e.g. https://www.tiktok.com/@someone)" />
         <input v-model="newName" class="url-input" style="max-width: 180px;" placeholder="Name (optional)" />
-        <select v-model="newQuality" class="url-input" style="max-width: 130px; flex: none;">
+        <select v-model="newQuality" class="url-input" style="max-width: 110px; flex: none;">
           <option value="best">Best</option>
           <option value="4k">4K</option>
           <option value="1080p">1080p</option>
           <option value="720p">720p</option>
           <option value="480p">480p</option>
+        </select>
+        <select v-model.number="newInterval" class="url-input" style="max-width: 130px; flex: none;" title="Check every…">
+          <option :value="15">15 min</option>
+          <option :value="30">30 min</option>
+          <option :value="60">60 min</option>
+          <option :value="180">3 hours</option>
+          <option :value="360">6 hours</option>
+          <option :value="720">12 hours</option>
+          <option :value="1440">24 hours</option>
         </select>
         <button class="btn" :disabled="adding || !newUrl.trim()" @click="addProspect">
           {{ adding ? 'Adding…' : 'Add' }}
@@ -45,13 +54,22 @@
     <div v-for="p in prospects" :key="p.id" class="card">
       <div class="row" style="align-items: center;">
         <template v-if="editingId === p.id">
-          <input v-model="editName" class="url-input" style="max-width: 200px;" />
-          <select v-model="editQuality" class="url-input" style="max-width: 120px; flex: none;">
+          <input v-model="editName" class="url-input" style="max-width: 180px;" />
+          <select v-model="editQuality" class="url-input" style="max-width: 110px; flex: none;">
             <option value="best">Best</option>
             <option value="4k">4K</option>
             <option value="1080p">1080p</option>
             <option value="720p">720p</option>
             <option value="480p">480p</option>
+          </select>
+          <select v-model.number="editInterval" class="url-input" style="max-width: 120px; flex: none;">
+            <option :value="15">15 min</option>
+            <option :value="30">30 min</option>
+            <option :value="60">60 min</option>
+            <option :value="180">3 hours</option>
+            <option :value="360">6 hours</option>
+            <option :value="720">12 hours</option>
+            <option :value="1440">24 hours</option>
           </select>
           <button class="btn small" @click="saveEdit(p.id)">Save</button>
           <button class="btn secondary small" @click="cancelEdit()">Cancel</button>
@@ -59,6 +77,7 @@
         <template v-else>
           <strong style="font-size: 15px;">{{ p.name }}</strong>
           <span class="badge">{{ p.quality }}</span>
+          <span class="badge info">every {{ formatInterval(p.intervalMinutes) }}</span>
         </template>
         <span v-if="p.status === 'ok'" class="badge ok">watching</span>
         <span v-else-if="p.status === 'paused'" class="badge">paused</span>
@@ -125,6 +144,7 @@ const prospects = ref<Prospect[]>([])
 const newUrl = ref('')
 const newName = ref('')
 const newQuality = ref<Quality>('best')
+const newInterval = ref(60)
 const adding = ref(false)
 const addMsg = ref('')
 const linkInputs = ref<Record<string, string>>({})
@@ -134,6 +154,7 @@ const checkingOne = ref<string | null>(null)
 const editingId = ref<string | null>(null)
 const editName = ref('')
 const editQuality = ref<Quality>('best')
+const editInterval = ref(60)
 const editingLinkId = ref<string | null>(null)
 const editLinkUrl = ref('')
 
@@ -163,7 +184,7 @@ async function addProspect() {
   adding.value = true
   addMsg.value = ''
   try {
-    await window.dpApi.prospectsAdd(newUrl.value.trim(), newName.value.trim() || undefined, newQuality.value)
+    await window.dpApi.prospectsAdd(newUrl.value.trim(), newName.value.trim() || undefined, newQuality.value, newInterval.value)
     newUrl.value = ''
     newName.value = ''
     addMsg.value = 'Prospect added ✓'
@@ -231,6 +252,7 @@ function startEdit(p: Prospect) {
   editingId.value = p.id
   editName.value = p.name
   editQuality.value = p.quality
+  editInterval.value = p.intervalMinutes
   editingLinkId.value = null
 }
 
@@ -245,11 +267,18 @@ async function saveEdit(id: string) {
       await window.dpApi.prospectsRename(id, editName.value)
     }
     await window.dpApi.prospectsSetQuality(id, editQuality.value)
+    await window.dpApi.prospectsSetInterval(id, editInterval.value)
     editingId.value = null
     await load()
   } catch (e) {
     alert((e as Error).message)
   }
+}
+
+function formatInterval(mins: number): string {
+  if (mins < 60) return `${mins}m`
+  if (mins < 1440) return `${mins / 60}h`
+  return `${mins / 1440}d`
 }
 
 function startEditLink(l: { id: string; url: string }) {
