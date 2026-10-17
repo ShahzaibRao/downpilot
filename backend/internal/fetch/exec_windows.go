@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-// hideWindow 隐藏子进程控制台窗口
+// hideWindow hides the child process console window
 func hideWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
