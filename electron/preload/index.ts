@@ -22,18 +22,24 @@ contextBridge.exposeInMainWorld('dpApi', {
     return () => ipcRenderer.removeListener('deps:progress', handler)
   },
 
-  // ---- downloads (Phase 1) ----
-  /** Start a download. Returns the job id; progress streams via onDownloadProgress. */
-  startDownload: (opts: { url: string; quality: string }) => ipcRenderer.invoke('dl:start', opts),
+  // ---- downloads: queue (Phase 1c) ----
+  /** Add a URL to the download queue. Returns the task. */
+  queueAdd: (opts: { url: string; quality: string }) => ipcRenderer.invoke('queue:add', opts),
 
-  /** Cancel a running download. */
-  cancelDownload: (id: string) => ipcRenderer.invoke('dl:cancel', id),
+  /** List all tasks (also used to hydrate the UI on load). */
+  queueList: () => ipcRenderer.invoke('queue:list'),
 
-  /** Subscribe to download progress events. Returns an unsubscribe function. */
-  onDownloadProgress: (cb: (evt: Record<string, unknown>) => void) => {
-    const handler = (_event: unknown, evt: Record<string, unknown>) => cb(evt)
-    ipcRenderer.on('dl:progress', handler)
-    return () => ipcRenderer.removeListener('dl:progress', handler)
+  queuePause: (id: string) => ipcRenderer.invoke('queue:pause', id),
+  queueResume: (id: string) => ipcRenderer.invoke('queue:resume', id),
+  queueRetry: (id: string) => ipcRenderer.invoke('queue:retry', id),
+  queueCancel: (id: string) => ipcRenderer.invoke('queue:cancel', id),
+  queueClearDone: () => ipcRenderer.invoke('queue:clearDone'),
+
+  /** Subscribe to queue updates (full task list on every change). Returns an unsubscribe function. */
+  onQueueUpdate: (cb: (tasks: Record<string, unknown>[]) => void) => {
+    const handler = (_event: unknown, tasks: Record<string, unknown>[]) => cb(tasks)
+    ipcRenderer.on('queue:update', handler)
+    return () => ipcRenderer.removeListener('queue:update', handler)
   },
 
   // ---- settings ----
