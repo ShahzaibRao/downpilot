@@ -28,12 +28,15 @@ export interface SmartModeConfig {
 export interface Settings {
   downloadDir: string
   maxConcurrent: number
+  /** max new items per prospect per check (default 20) */
+  maxNewPerCheck: number
   smartMode: SmartModeConfig
 }
 
 const defaults = (): Settings => ({
   downloadDir: path.join(app.getPath('downloads'), 'DownPilot'),
   maxConcurrent: 1,
+  maxNewPerCheck: 20,
   smartMode: {
     enabled: false,
     proxies: [],
@@ -52,6 +55,7 @@ export function getSettings(): Settings {
     const raw = fs.readFileSync(settingsPath(), 'utf8')
     const parsed = { ...defaults(), ...JSON.parse(raw) }
     parsed.maxConcurrent = Math.min(8, Math.max(1, Math.floor(parsed.maxConcurrent) || 1))
+    parsed.maxNewPerCheck = Math.min(50, Math.max(1, Math.floor(parsed.maxNewPerCheck) || 20))
     // backfill smartMode for settings saved before Phase 2c
     if (!parsed.smartMode) parsed.smartMode = defaults().smartMode
     // migrate old single-proxy shape → proxies list
@@ -101,6 +105,7 @@ export function getSettings(): Settings {
 export function setSettings(patch: Partial<Settings>): Settings {
   const next = { ...getSettings(), ...patch }
   next.maxConcurrent = Math.min(8, Math.max(1, Math.floor(next.maxConcurrent) || 1))
+  next.maxNewPerCheck = Math.min(50, Math.max(1, Math.floor(next.maxNewPerCheck) || 20))
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true })
   fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2))
   fs.mkdirSync(next.downloadDir, { recursive: true })
