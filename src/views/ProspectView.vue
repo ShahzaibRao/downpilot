@@ -37,12 +37,23 @@
     <div v-if="prospects.length === 0" class="card muted">No prospects yet. Add one above to start auto-watching.</div>
     <div v-for="p in prospects" :key="p.id" class="card">
       <div class="row" style="align-items: center;">
-        <strong style="font-size: 15px;">{{ p.name }}</strong>
+        <template v-if="editingId === p.id">
+          <input v-model="editName" class="url-input" style="max-width: 220px;" />
+          <button class="btn small" @click="saveName(p.id)">Save</button>
+          <button class="btn secondary small" @click="cancelEdit()">Cancel</button>
+        </template>
+        <template v-else>
+          <strong style="font-size: 15px;">{{ p.name }}</strong>
+        </template>
         <span v-if="p.status === 'ok'" class="badge ok">watching</span>
         <span v-else-if="p.status === 'paused'" class="badge">paused</span>
         <span v-else class="badge err">error</span>
         <span class="muted" style="font-size: 12px;">{{ p.links.length }} link{{ p.links.length === 1 ? '' : 's' }}</span>
         <span class="spacer"></span>
+        <button class="btn secondary small" :disabled="checkingOne === p.id" @click="checkOne(p.id)">
+          {{ checkingOne === p.id ? 'Checking…' : 'Check' }}
+        </button>
+        <button v-if="editingId !== p.id" class="btn secondary small" @click="startEdit(p)">Edit</button>
         <button v-if="p.status === 'paused'" class="btn secondary small" @click="unpause(p.id)">Resume</button>
         <button v-else class="btn secondary small" @click="setStatus(p.id, 'paused')">Pause</button>
         <button class="btn secondary small" @click="remove(p.id)">Remove</button>
@@ -56,9 +67,17 @@
       <div class="preview" style="margin-top: 8px;">
         <div v-for="l in p.links" :key="l.id" class="preview-row">
           <span class="badge">{{ l.platform }}</span>
-          <span class="muted" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;">{{ l.url }}</span>
-          <span class="spacer"></span>
-          <button v-if="p.links.length > 1" class="btn secondary small" @click="removeLink(p.id, l.id)">✕</button>
+          <template v-if="editingLinkId === l.id">
+            <input v-model="editLinkUrl" class="url-input" style="font-size: 12px;" />
+            <button class="btn small" @click="saveLink(p.id, l.id)">Save</button>
+            <button class="btn secondary small" @click="editingLinkId = null">Cancel</button>
+          </template>
+          <template v-else>
+            <span class="muted" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;">{{ l.url }}</span>
+            <span class="spacer"></span>
+            <button v-if="editingId === p.id" class="btn secondary small" @click="startEditLink(l)">Edit</button>
+            <button v-if="p.links.length > 1" class="btn secondary small" @click="removeLink(p.id, l.id)">✕</button>
+          </template>
         </div>
         <div class="preview-row">
           <input v-model="linkInputs[p.id]" class="url-input" style="font-size: 12px;" placeholder="Add another platform link for this creator…" />
@@ -95,6 +114,11 @@ const addMsg = ref('')
 const linkInputs = ref<Record<string, string>>({})
 const checking = ref(false)
 const checkMsg = ref('')
+const checkingOne = ref<string | null>(null)
+const editingId = ref<string | null>(null)
+const editName = ref('')
+const editingLinkId = ref<string | null>(null)
+const editLinkUrl = ref('')
 
 const stats = computed(() => ({
   watching: prospects.value.filter((p) => p.status === 'ok').length,
@@ -166,6 +190,60 @@ async function setStatus(id: string, status: string) {
 async function unpause(id: string) {
   await window.dpApi.prospectsUnpause(id)
   await load()
+}
+
+async function checkOne(id: string) {
+  checkingOne.value = id
+  try {
+    const r = await window.dpApi.prospectsCheckOne(id)
+    if (r) {
+      checkMsg.value = r.error
+        ? `${r.prospectName}: ${r.error}`
+        : `${r.prospectName}: ${r.newItems} new, ${r.queued} queued ✓`
+    }
+    await load()
+    await loadRecent()
+  } catch (e) {
+    checkMsg.value = `Check failed: ${(e as Error).message}`
+  } finally {
+    checkingOne.value = null
+  }
+}
+
+function startEdit(p: Prospect) {
+  editingId.value = p.id
+  editName.value = p.name
+  editingLinkId.value = null
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editingLinkId.value = null
+}
+
+async function saveName(id: string) {
+  try {
+    await window.dpApi.prospectsRename(id, editName.value)
+    editingId.value = null
+    await load()
+  } catch (e) {
+    alert((e as Error).message)
+  }
+}
+
+function startEditLink(l: { id: string; url: string }) {
+  editingLinkId.value = l.id
+  editLinkUrl.value = l.url
+}
+
+async function saveLink(prospectId: string, linkId: string) {
+  try {
+    await window.dpApi.prospectsUpdateLink(prospectId, linkId, editLinkUrl.value)
+    editingLinkId.value = null
+    await load()
+  } catch (e) {
+    alert((e as Error).message)
+  }
 }
 
 function formatTime(iso: string): string {
