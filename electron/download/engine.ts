@@ -23,6 +23,8 @@ export interface ProgressEvent {
   speed: string
   eta: string
   filename: string
+  /** Which engine produced this event: 'yt-dlp' | 'gallery' | '' (not yet known). */
+  engine: string
   error?: string
 }
 
@@ -43,6 +45,7 @@ export const QUALITY_FORMATS: Record<Quality, string> = {
 export class YtDlpJob {
   private proc: ChildProcess | null = null
   private filename = ''
+  private finished = false
 
   constructor(
     readonly id: string,
@@ -85,9 +88,13 @@ export class YtDlpJob {
       stderrTail = (stderrTail + chunk.toString('utf8')).slice(-2000)
     })
     this.proc.on('error', (err) => {
+      if (this.finished) return
+      this.finished = true
       this.emit({ status: 'error', error: `failed to start yt-dlp: ${err.message}` })
     })
     this.proc.on('close', (code) => {
+      if (this.finished) return
+      this.finished = true
       if (code === 0) {
         this.emit({ status: 'done', percent: 100 })
       } else {
@@ -135,6 +142,7 @@ export class YtDlpJob {
       speed: '',
       eta: '',
       filename: this.filename,
+      engine: '', // filled in by the DownloadJob orchestrator
       ...partial
     })
   }
@@ -144,4 +152,206 @@ function numOrNull(s: string): number | null {
   if (s === 'NA') return null
   const n = parseInt(s, 10)
   return Number.isFinite(n) ? n : null
+}
+
+// ---------------------------------------------------------------------------
+// gallery-dl engine
+// ---------------------------------------------------------------------------
+
+export interface GalleryDlOptions {
+  url: string
+  outDir: string
+  gallerydlPath: string
+}
+
+/**
+ * gallery-dl job. When stdout is piped (our case), gallery-dl prints one
+ * downloaded file path per line (PipeOutput.success) and "# <path>" for
+ * skipped files — that's our progress signal. Per-byte progress isn't
+ * available this way, so percent stays -1 (UI shows an indeterminate bar).
+ */
+export class GalleryDlJob {
+  private proc: ChildProcess | null = null
+  private files = 0
+  private finished = false
+
+  constructor(
+    readonly id: string,
+    private opts: GalleryDlOptions,
+    private onEvent: (e: ProgressEvent) => void
+  ) {}
+
+  start(): void {
+    const args = ['-d', this.opts.outDir, this.opts.url]
+    this.proc = spawn(this.opts.gallerydlPath, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+    let buf = ''
+    let stderrTail = ''
+    this.proc.stdout?.on('data', (chunk: Buffer) => {
+      buf += chunk.toString('utf8')
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const t = line.trim()
+        if (!t) continue
+        if (t.startsWith('# ')) continue // skipped file
+        this.files++
+        this.emit({ status: 'downloading', filename: path.basename(t) })
+      }
+    })
+    this.proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrTail = (stderrTail + chunk.toString('utf8')).slice(-2000)
+    })
+    this.proc.on('error', (err) => {
+      if (this.finished) return
+      this.finished = true
+      this.emit({ status: 'error', error: `failed to start gallery-dl: ${err.message}` })
+    })
+    this.proc.on('close', (code) => {
+      if (this.finished) return
+      this.finished = true
+      if (code === 0) {
+        if (this.files === 0) {
+          this.emit({ status: 'error', error: 'gallery-dl finished without downloading any file' })
+        } else {
+          this.emit({ status: 'done', percent: 100 })
+        }
+      } else {
+        const reason =
+          stderrTail
+            .split('\n')
+            .filter((l) => /\[error\]|error:/i.test(l))
+            .pop()?.trim() ?? `gallery-dl exited with code ${code}`
+        this.emit({ status: 'error', error: reason })
+      }
+    })
+  }
+
+  cancel(): void {
+    this.proc?.kill()
+  }
+
+  private emit(partial: Partial<ProgressEvent>): void {
+    this.onEvent({
+      id: this.id,
+      status: 'downloading',
+      percent: -1, // indeterminate
+      downloaded: 0,
+      total: null,
+      speed: '',
+      eta: '',
+      filename: '',
+      engine: '', // filled in by the DownloadJob orchestrator
+      ...partial
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator: router + fallback chain
+// ---------------------------------------------------------------------------
+
+import { routeUrl, engineLabel, type Engine } from './router'
+
+export interface Tools {
+  ytdlp?: string
+  ffmpegDir?: string
+  gallerydl?: string
+}
+
+function blankEvent(id: string): ProgressEvent {
+  return {
+    id,
+    status: 'downloading',
+    percent: 0,
+    downloaded: 0,
+    total: null,
+    speed: '',
+    eta: '',
+    filename: '',
+    engine: ''
+  }
+}
+
+/**
+ * One logical download: picks the primary engine from the URL, runs it,
+ * and falls back to the secondary engine on failure. If both fail, the
+ * error carries both reasons (CreatorWatch rule).
+ */
+export class DownloadJob {
+  private current: { cancel(): void } | null = null
+  private errors: string[] = []
+  private cancelled = false
+
+  constructor(
+    readonly id: string,
+    private url: string,
+    private outDir: string,
+    private quality: Quality,
+    private tools: Tools,
+    private onEvent: (e: ProgressEvent) => void
+  ) {}
+
+  start(): void {
+    const route = routeUrl(this.url)
+    this.tryEngine(route.primary, () => this.tryEngine(route.secondary, () => this.failAll()))
+  }
+
+  cancel(): void {
+    this.cancelled = true
+    this.current?.cancel()
+  }
+
+  private tryEngine(engine: Engine, next: () => void): void {
+    if (this.cancelled) return
+    const label = engineLabel(engine)
+    const bin = engine === 'ytdlp' ? this.tools.ytdlp : this.tools.gallerydl
+    if (!bin) {
+      this.errors.push(`${label} is not installed — get it from Settings`)
+      next()
+      return
+    }
+    // Announce which engine is trying (UI badge switches on fallback too).
+    this.onEvent({ ...blankEvent(this.id), engine: label })
+
+    const sink = (e: ProgressEvent) => {
+      if (e.status === 'error') {
+        this.errors.push(`${label}: ${e.error ?? 'unknown error'}`)
+        next()
+      } else {
+        this.onEvent({ ...e, engine: label })
+      }
+    }
+
+    if (engine === 'ytdlp') {
+      if (!this.tools.ffmpegDir) {
+        this.errors.push('yt-dlp: ffmpeg is not installed — get it from Settings')
+        next()
+        return
+      }
+      const job = new YtDlpJob(
+        this.id,
+        { url: this.url, outDir: this.outDir, quality: this.quality, ytdlpPath: bin, ffmpegDir: this.tools.ffmpegDir },
+        sink
+      )
+      this.current = job
+      job.start()
+    } else {
+      const job = new GalleryDlJob(this.id, { url: this.url, outDir: this.outDir, gallerydlPath: bin }, sink)
+      this.current = job
+      job.start()
+    }
+  }
+
+  private failAll(): void {
+    if (this.cancelled) return
+    this.onEvent({
+      ...blankEvent(this.id),
+      status: 'error',
+      error: this.errors.join('  |  ')
+    })
+  }
 }
