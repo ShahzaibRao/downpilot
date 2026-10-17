@@ -12,6 +12,14 @@
     </div>
     <div v-if="checkMsg" class="muted" style="font-size: 13px; margin-bottom: 8px;">{{ checkMsg }}</div>
 
+    <!-- dashboard stats -->
+    <div v-if="prospects.length > 0" class="stats">
+      <div class="stat"><span class="stat-num">{{ stats.watching }}</span><span class="muted">watching</span></div>
+      <div class="stat"><span class="stat-num">{{ stats.paused }}</span><span class="muted">paused</span></div>
+      <div class="stat"><span class="stat-num">{{ stats.errors }}</span><span class="muted">errors</span></div>
+      <div class="stat"><span class="stat-num">{{ stats.links }}</span><span class="muted">links</span></div>
+    </div>
+
     <!-- add -->
     <div class="card">
       <h3>Add prospect</h3>
@@ -58,12 +66,26 @@
         </div>
       </div>
     </div>
+    <!-- recent downloads -->
+    <div v-if="recentDownloads.length > 0" class="card">
+      <h3>Recent Downloads</h3>
+      <div class="preview">
+        <div v-for="h in recentDownloads" :key="h.id" class="preview-row">
+          <span v-if="h.status === 'done'" class="badge ok">done</span>
+          <span v-else class="badge err">failed</span>
+          <span class="badge">{{ h.prospectName || 'prospect' }}</span>
+          <span class="muted" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;">{{ h.filename }}</span>
+          <span class="spacer"></span>
+          <span class="muted" style="font-size: 11px;">{{ formatTime(new Date(h.completedAt).toISOString()) }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import type { Prospect, CheckResult } from '../types'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import type { Prospect, CheckResult, HistoryEntry } from '../types'
 
 const prospects = ref<Prospect[]>([])
 const newUrl = ref('')
@@ -73,6 +95,22 @@ const addMsg = ref('')
 const linkInputs = ref<Record<string, string>>({})
 const checking = ref(false)
 const checkMsg = ref('')
+
+const stats = computed(() => ({
+  watching: prospects.value.filter((p) => p.status === 'ok').length,
+  paused: prospects.value.filter((p) => p.status === 'paused').length,
+  errors: prospects.value.filter((p) => p.status === 'error').length,
+  links: prospects.value.reduce((n, p) => n + p.links.length, 0)
+}))
+
+const recentDownloads = ref<HistoryEntry[]>([])
+
+async function loadRecent() {
+  try {
+    const all = await window.dpApi.historyList()
+    recentDownloads.value = all.filter((h) => h.prospectId).slice(0, 10)
+  } catch { /* ignore */ }
+}
 
 async function load() {
   try {
@@ -166,6 +204,7 @@ function onCheckDone(_e: Event, results: CheckResult[]) {
 
 onMounted(() => {
   load()
+  loadRecent()
   window.dpApi.onProspectsCheckDone(onCheckDone)
 })
 
@@ -221,5 +260,24 @@ onUnmounted(() => {
   align-items: center;
   padding: 4px 0;
   border-top: 1px solid #2a2a2a;
+}
+.stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.stat {
+  background: #1e1e2e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 90px;
+}
+.stat-num {
+  font-size: 22px;
+  font-weight: bold;
 }
 </style>
