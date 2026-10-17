@@ -124,6 +124,7 @@ export async function listItemsGalleryDl(
   const items: ProspectItem[] = []
   let rawLines = 0
   let jsonLines = 0
+  let loggedSample = false
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
@@ -132,9 +133,16 @@ export async function listItemsGalleryDl(
     jsonLines++
     try {
       const obj = JSON.parse(trimmed)
-      // debug: log first object's keys so we can fix the parser
-      if (jsonLines === 1) {
-        log(`gallery-dl sample keys for ${platform}: ${Object.keys(obj).slice(0, 15).join(', ')}`)
+      // debug: log first successfully parsed object's structure
+      if (!loggedSample) {
+        loggedSample = true
+        const keys = Object.keys(obj)
+        const sample: Record<string, string> = {}
+        for (const k of keys.slice(0, 20)) {
+          const v = obj[k]
+          sample[k] = typeof v === 'object' ? `[${Array.isArray(v) ? 'array' : 'object'}]` : String(v).slice(0, 40)
+        }
+        log(`gallery-dl sample for ${platform}: ${JSON.stringify(sample).slice(0, 500)}`)
       }
       const parsed = parseGalleryItem(obj, platform, username)
       if (parsed) items.push(parsed)
