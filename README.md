@@ -9,7 +9,32 @@ Built on a DownVid-grade engine: yt-dlp + gallery-dl behind an engine router wit
 
 ## Status
 
-**Phase 0 — Foundation** (in progress). See `docs/` and the design notes for the full plan.
+**Phase 0 — Foundation** (in progress): Electron shell + Go sidecar wiring. The Settings tab
+shows live dependency status from `dp-deps` and can download missing tools.
+
+## Development
+
+Requirements: **Node.js 20+** and **Go 1.24+**.
+
+```powershell
+# 1. clone
+git clone https://github.com/ShahzaibRao/downpilot.git
+cd downpilot
+
+# 2. build the sidecar (produces backend/bin/dp-deps.exe on Windows)
+npm run sidecar:build:win   # or: npm run sidecar:build   (Linux/macOS)
+
+# 3. install JS deps and run the app in dev mode
+npm install
+npm run dev
+```
+
+Open **Settings** in the app: it detects the 5 runtime deps (yt-dlp, ffmpeg, ffprobe,
+gallery-dl, deno) and offers one-click download for missing ones — all through the
+Go sidecar, with SHA-256 verification.
+
+Other scripts: `npm run build` (production bundle), `npm run typecheck`,
+`npm run manifest` (regenerate the pinned dependency manifest).
 
 ## Architecture
 
