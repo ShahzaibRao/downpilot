@@ -9,6 +9,26 @@ import type { Tools } from '../download/engine'
 
 const execFileAsync = promisify(execFile)
 
+/** Log with [prospect] prefix — visible in terminal via `npm run dev`. */
+function log(...args: unknown[]): void {
+  console.log('[prospect]', ...args)
+}
+
+/** Log a full exec failure for tracing (command + stdout tail + stderr tail). */
+function logExecFailure(label: string, e: any): void {
+  const stdout = (e.stdout || '').toString().trim()
+  const stderr = (e.stderr || '').toString().trim()
+  log(`${label} FAILED:`)
+  // last 5 lines of stderr (where the real error usually is)
+  const errLines = stderr.split('\n').filter((l: string) => l.trim()).slice(-5)
+  for (const l of errLines) log(`  stderr: ${l.trim()}`)
+  const outLines = stdout.split('\n').filter((l: string) => l.trim()).slice(-3)
+  for (const l of outLines) log(`  stdout: ${l.trim().slice(0, 200)}`)
+  if (!errLines.length && !outLines.length) {
+    log(`  message: ${(e.message || '').toString().slice(0, 500)}`)
+  }
+}
+
 export interface ProspectItem {
   id: string
   title: string
@@ -195,16 +215,24 @@ export async function listWithFallback(
 ): Promise<ProspectItem[]> {
   let ytdlpErr: Error | null = null
   if (tools.ytdlp) {
+    log(`listing ${platform} via yt-dlp: ${url}`)
     try {
-      return await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
+      const items = await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
+      log(`yt-dlp OK: ${items.length} items`)
+      return items
     } catch (e) {
       ytdlpErr = e as Error
+      logExecFailure('yt-dlp', e)
     }
   }
   if (tools.gallerydl) {
+    log(`listing ${platform} via gallery-dl: ${url}`)
     try {
-      return await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
+      const items = await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
+      log(`gallery-dl OK: ${items.length} items`)
+      return items
     } catch (e) {
+      logExecFailure('gallery-dl', e)
       const gdlMsg = cleanError((e as Error).message)
       const ytdlpMsg = ytdlpErr ? cleanError(ytdlpErr.message) : 'yt-dlp not available'
       throw new Error(`${platform}: yt-dlp: ${ytdlpMsg} | gallery-dl: ${gdlMsg}`)
@@ -261,14 +289,18 @@ export class ProspectScheduler {
     try {
       const store = this.deps.getStore()
       const prospects = store.list().filter((p) => p.status === 'ok')
+      log(`checkAll: ${prospects.length} prospect(s) to check`)
       for (const p of prospects) {
+        log(`checking "${p.name}" (${p.links.length} link(s))`)
         try {
           const r = await this.checkProspect(p)
+          log(`"${p.name}": ${r.newItems} new, ${r.queued} queued${r.error ? ` (warnings: ${r.error})` : ''}`)
           results.push(r)
           // OK if at least one link worked; per-link warnings preserved
           store.recordCheck(p.id, true, undefined, r.error)
         } catch (e) {
           const msg = cleanError((e as Error).message)
+          log(`"${p.name}" FAILED: ${msg}`)
           results.push({ prospectId: p.id, prospectName: p.name, newItems: 0, queued: 0, error: msg })
           store.recordCheck(p.id, false, msg)
         }
