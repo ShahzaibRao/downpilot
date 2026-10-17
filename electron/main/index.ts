@@ -1,8 +1,11 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
+import { YtDlpJob, type Quality } from '../download/engine'
+import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const execFileAsync = promisify(execFile)
@@ -121,4 +124,78 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// ---- IPC: downloads (P1a — yt-dlp single downloads) ----
+
+interface ToolPaths {
+  ytdlp: string
+  ffmpegDir: string
+}
+
+let toolPathsCache: ToolPaths | null = null
+
+/** Resolve yt-dlp + ffmpeg locations via the sidecar (cached for the session). */
+async function toolPaths(): Promise<ToolPaths> {
+  if (toolPathsCache) return toolPathsCache
+  const { stdout } = await execFileAsync(
+    sidecarPath(),
+    ['detect', '--managed-dir', managedDir(), '--json'],
+    { timeout: 120_000 }
+  )
+  const results = (JSON.parse(stdout) as { results: Array<{ kind: string; found: boolean; path?: string }> }).results
+  const byKind = new Map(results.map((r) => [r.kind, r]))
+  const ytdlp = byKind.get('yt-dlp')
+  const ffmpeg = byKind.get('ffmpeg')
+  if (!ytdlp?.found || !ytdlp.path) throw new Error('yt-dlp is not installed — download it from Settings first')
+  if (!ffmpeg?.found || !ffmpeg.path) throw new Error('ffmpeg is not installed — download it from Settings first')
+  toolPathsCache = { ytdlp: ytdlp.path, ffmpegDir: path.dirname(ffmpeg.path) }
+  return toolPathsCache
+}
+
+const jobs = new Map<string, YtDlpJob>()
+
+/** Start a download. Returns the job id; progress streams as 'dl:progress'. */
+ipcMain.handle('dl:start', async (event, opts: { url: string; quality: Quality }) => {
+  const url = opts.url.trim()
+  if (!/^https?:\/\//i.test(url)) throw new Error('Please paste a valid http(s) link')
+  const tools = await toolPaths()
+  const settings = getSettings()
+  const id = randomUUID()
+  const job = new YtDlpJob(
+    id,
+    { url, outDir: settings.downloadDir, quality: opts.quality, ytdlpPath: tools.ytdlp, ffmpegDir: tools.ffmpegDir },
+    (e) => {
+      event.sender.send('dl:progress', e)
+      if (e.status === 'done' || e.status === 'error') jobs.delete(id)
+    }
+  )
+  jobs.set(id, job)
+  job.start()
+  return id
+})
+
+/** Cancel a running download. */
+ipcMain.handle('dl:cancel', async (_event, id: string) => {
+  jobs.get(id)?.cancel()
+  jobs.delete(id)
+  return true
+})
+
+// ---- IPC: settings ----
+
+ipcMain.handle('settings:get', async () => getSettings())
+
+ipcMain.handle('settings:set', async (_event, patch: { downloadDir?: string }) => {
+  toolPathsCache = null // download dir change doesn't affect tools, kept simple
+  return setSettings(patch)
+})
+
+/** Let the user pick the download folder. Returns the path or null. */
+ipcMain.handle('dialog:openDir', async () => {
+  const res = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Choose download folder'
+  })
+  return res.canceled ? null : res.filePaths[0]
 })
