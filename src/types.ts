@@ -215,6 +215,8 @@ export interface DpApi {
   prospectsSetStatus(id: string, status: string): Promise<boolean>
   prospectsUnpause(id: string): Promise<boolean>
   prospectsCheckNow(): Promise<CheckResult[]>
+  prospectsCheckOne(id: string): Promise<CheckResult | null>
+  prospectsUpdateLink(prospectId: string, linkId: string, newUrl: string): Promise<ProspectLink>
   onProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   offProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   // notifications (Phase 3c)
