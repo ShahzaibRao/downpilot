@@ -123,6 +123,24 @@ export interface ProxyTestItemResult {
   error?: string
 }
 
+export interface ProspectLink {
+  id: string
+  url: string
+  platform: string
+}
+
+export interface Prospect {
+  id: string
+  name: string
+  links: ProspectLink[]
+  folder: string
+  status: 'ok' | 'paused' | 'error'
+  failCount: number
+  lastCheck: string | null
+  lastError: string | null
+  createdAt: string
+}
+
 export interface PotStatus {
   denoPath: string | null
   filesReady: boolean
@@ -167,6 +185,15 @@ export interface DpApi {
   potStart(): Promise<boolean>
   potStop(): Promise<boolean>
   potForceStop(): Promise<boolean>
+  // prospects (Phase 3)
+  prospectsList(): Promise<Prospect[]>
+  prospectsAdd(url: string, name?: string): Promise<Prospect>
+  prospectsAddLink(prospectId: string, url: string): Promise<ProspectLink>
+  prospectsRemoveLink(prospectId: string, linkId: string): Promise<boolean>
+  prospectsRemove(id: string): Promise<boolean>
+  prospectsRename(id: string, name: string): Promise<Prospect>
+  prospectsSetStatus(id: string, status: string): Promise<boolean>
+  prospectsUnpause(id: string): Promise<boolean>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
