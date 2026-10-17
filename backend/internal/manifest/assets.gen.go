@@ -13,23 +13,31 @@ const YtDlpTag = "2026.10.10.233141"
 // FFmpegTag ffmpeg-static 的固定 tag
 const FFmpegTag = "b6.1.1"
 
+// GalleryDlTag gallery-dl nightly standalone 构建的固定 tag（日期版本号，gdl-org/builds）
+const GalleryDlTag = "2026.10.17"
+
+// DenoTag deno 的固定 tag
+const DenoTag = "v2.9.7"
+
 const (
-	ytdlpBase  = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/" + YtDlpTag
-	ffmpegBase = "https://github.com/eugeneware/ffmpeg-static/releases/download/" + FFmpegTag
+	ytdlpBase     = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/" + YtDlpTag
+	ffmpegBase    = "https://github.com/eugeneware/ffmpeg-static/releases/download/" + FFmpegTag
+	gallerydlBase = "https://github.com/gdl-org/builds/releases/download/" + GalleryDlTag
+	denoBase      = "https://github.com/denoland/deno/releases/download/" + DenoTag
 )
 
 // ytdlpAssets yt-dlp 在各平台的产物与 SHA-256
 var ytdlpAssets = map[string]asset{
-	"darwin/arm64": {"yt-dlp_macos", "c8ee97b3f6aa0fb5cbc3f56d772c0d79dc2c5d3d60f3bf0b240d5dd0d461fd25"},
-	"darwin/x64":   {"yt-dlp_macos", "c8ee97b3f6aa0fb5cbc3f56d772c0d79dc2c5d3d60f3bf0b240d5dd0d461fd25"},
-	"linux/x64":    {"yt-dlp_linux", "60606cef1a65d70f6639a85b45ebb7acf08dbb81831e134dd93939e23ca2b792"},
-	"linux/arm64":  {"yt-dlp_linux_aarch64", "ce8f929bbdbfb09f51563bf96f3add7cc975e1dfc91b2b9492f82a062d58d62f"},
-	"win32/x64":    {"yt-dlp.exe", "e7cafc44db8aa433da8dd78303b9157f2c1dd509c4cbfcd8418081b7e1d26a7a"},
+	"darwin/arm64":   {"yt-dlp_macos", "c8ee97b3f6aa0fb5cbc3f56d772c0d79dc2c5d3d60f3bf0b240d5dd0d461fd25"},
+	"darwin/x64":     {"yt-dlp_macos", "c8ee97b3f6aa0fb5cbc3f56d772c0d79dc2c5d3d60f3bf0b240d5dd0d461fd25"},
+	"linux/x64":      {"yt-dlp_linux", "60606cef1a65d70f6639a85b45ebb7acf08dbb81831e134dd93939e23ca2b792"},
+	"linux/arm64":    {"yt-dlp_linux_aarch64", "ce8f929bbdbfb09f51563bf96f3add7cc975e1dfc91b2b9492f82a062d58d62f"},
+	"win32/x64":      {"yt-dlp.exe", "e7cafc44db8aa433da8dd78303b9157f2c1dd509c4cbfcd8418081b7e1d26a7a"},
 }
 
 // ffmpegAssets ffmpeg / ffprobe 在各平台的产物与 SHA-256。
 //
-// 选用 ffmpeg-static（ffmpeg 6.0 静态构建）而非 BtbN：体积更小、gzip 单文件便于校验，
+// 选用 ffmpeg-static（静态构建）而非 BtbN：体积更小、gzip 单文件便于校验，
 // 且带 libmp3lame / aac / libx264，覆盖音频转换与音视频合并两种用途。
 var ffmpegAssets = map[string]map[rt.Kind]asset{
 	"darwin/arm64": {
@@ -52,4 +60,24 @@ var ffmpegAssets = map[string]map[rt.Kind]asset{
 		rt.KindFFmpeg:  {"ffmpeg-win32-x64", "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77"},
 		rt.KindFFprobe: {"ffprobe-win32-x64", "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d"},
 	},
+}
+
+// gallerydlAssets gallery-dl 在各平台的产物与 SHA-256。
+//
+// 选用 gdl-org/builds 的 nightly standalone（含 Python 解释器，无需用户装 Python），
+// 与 yt-dlp 同一思路：站点修复更及时。linux/arm64 上游无构建， manifest 生成时跳过。
+var gallerydlAssets = map[string]asset{
+	"darwin/arm64":   {"gallery-dl_macos", "d70f8d543afe8b1ed5ee3fdc3ba6a00fafdcf1f5c2fc85f66bf911eb3ab45f1b"},
+	"darwin/x64":     {"gallery-dl_macos", "d70f8d543afe8b1ed5ee3fdc3ba6a00fafdcf1f5c2fc85f66bf911eb3ab45f1b"},
+	"linux/x64":      {"gallery-dl_linux", "164ccb54be051c5fe2fb5c8005e7872423206828523d2672e9acfe5ce5b35882"},
+	"win32/x64":      {"gallery-dl_windows.exe", "7637269587be25a4546fad2e70bd7c00bffeb2e6367ea5b36687fa0a5583dda6"},
+}
+
+// denoAssets deno 在各平台的产物与 SHA-256（zip 包，内含 deno / deno.exe）。
+var denoAssets = map[string]asset{
+	"darwin/arm64":   {"deno-aarch64-apple-darwin.zip", "5cd46d6268f6f78f5d88bdc7159d20bd44cdaa4b3303474839f87ec6fe7ae25c"},
+	"darwin/x64":     {"deno-x86_64-apple-darwin.zip", "95daaff11c116a52ad54785e7914c8e9c9cdcaba793c5ed929c74ca2d8e6259a"},
+	"linux/x64":      {"deno-x86_64-unknown-linux-gnu.zip", "c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490"},
+	"linux/arm64":    {"deno-aarch64-unknown-linux-gnu.zip", "c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf"},
+	"win32/x64":      {"deno-x86_64-pc-windows-msvc.zip", "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238"},
 }
