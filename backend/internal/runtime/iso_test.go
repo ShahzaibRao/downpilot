@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// 直接调用 scanDir（不经过 findOne）时也必须能工作
+// must also work when scanDir is called directly (without findOne)
 func TestScanWorksWithoutExplicitDeadline(t *testing.T) {
 	scanDeadline = time.Time{}
 	resetScanBudget()
@@ -16,6 +16,6 @@ func TestScanWorksWithoutExplicitDeadline(t *testing.T) {
 	os.MkdirAll(sub, 0o755)
 	os.WriteFile(filepath.Join(sub, BinaryName(KindFFmpeg)), []byte("x"), 0o755)
 	if got := scanDir(root, BinaryName(KindFFmpeg), 0); got == "" {
-		t.Error("未设置时限时应能正常扫描（CI 上就是这样失败的）")
+		t.Error("should scan normally without a deadline set (this is how CI failed)")
 	}
 }
