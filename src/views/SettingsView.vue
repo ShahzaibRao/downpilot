@@ -15,6 +15,11 @@
           <option :value="4">4</option>
         </select>
       </p>
+      <p class="muted" style="margin-top: 8px;">
+        Max new items per prospect per check:
+        <input v-model.number="maxNewPerCheck" type="number" min="1" max="50" class="quality" style="width: 70px;" @change="saveMaxNew" />
+        <span style="font-size: 12px;">(1–50, default 20)</span>
+      </p>
     </div>
 
     <div class="card">
@@ -264,12 +269,21 @@ function onProgress(evt: DepsProgressEvent) {
 
 const downloadDir = ref('')
 const maxConcurrent = ref(1)
+const maxNewPerCheck = ref(20)
 
 async function loadSettings() {
   try {
     const s = await window.dpApi.getSettings()
     downloadDir.value = s.downloadDir
     maxConcurrent.value = s.maxConcurrent
+    maxNewPerCheck.value = s.maxNewPerCheck ?? 20
+  } catch { /* ignore */ }
+}
+
+async function saveMaxNew() {
+  try {
+    const s = await window.dpApi.setSettings({ maxNewPerCheck: maxNewPerCheck.value })
+    maxNewPerCheck.value = s.maxNewPerCheck
   } catch { /* ignore */ }
 }
 
