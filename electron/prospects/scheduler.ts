@@ -123,9 +123,10 @@ export class ProspectScheduler {
         try {
           const r = await this.checkProspect(p)
           results.push(r)
-          store.recordCheck(p.id, true)
+          // OK if at least one link worked; per-link warnings preserved
+          store.recordCheck(p.id, true, undefined, r.error)
         } catch (e) {
-          const msg = (e as Error).message
+          const msg = cleanError((e as Error).message)
           results.push({ prospectId: p.id, prospectName: p.name, newItems: 0, queued: 0, error: msg })
           store.recordCheck(p.id, false, msg)
         }
@@ -147,27 +148,69 @@ export class ProspectScheduler {
 
     let newCount = 0
     let queuedCount = 0
+    const linkErrors: string[] = []
 
     for (const link of p.links) {
       if (newCount >= maxNew) break
-      const cookiesFile = this.deps.getCookiesFile(link.platform)
-      const proxyUrl = this.deps.getProxyUrl(link.url)
-      const items = await listItems(tools.ytdlp, link.url, maxNew, cookiesFile, proxyUrl)
+      try {
+        const cookiesFile = this.deps.getCookiesFile(link.platform)
+        const proxyUrl = this.deps.getProxyUrl(link.url)
+        const items = await listItems(tools.ytdlp, link.url, maxNew, cookiesFile, proxyUrl)
 
-      for (const item of items) {
-        if (newCount >= maxNew) break
-        if (seen.has(p.id, item.id)) continue
-        newCount++
-        // queue the download; mark seen when it completes (via onFinished)
-        queue.add(item.url, 'best', { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
-          outDir,
-          prospectId: p.id,
-          prospectItemId: item.id
-        })
-        queuedCount++
+        for (const item of items) {
+          if (newCount >= maxNew) break
+          if (seen.has(p.id, item.id)) continue
+          newCount++
+          // queue the download; mark seen when it completes (via onFinished)
+          queue.add(item.url, 'best', { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
+            outDir,
+            prospectId: p.id,
+            prospectItemId: item.id
+          })
+          queuedCount++
+        }
+      } catch (e) {
+        // one bad link must not kill the whole prospect — record and continue
+        linkErrors.push(`${link.platform}: ${cleanError((e as Error).message)}`)
       }
     }
 
-    return { prospectId: p.id, prospectName: p.name, newItems: newCount, queued: queuedCount }
+    // OK if at least one link worked; error only if ALL links failed
+    if (linkErrors.length > 0 && newCount === 0 && queuedCount === 0) {
+      // check if any link actually succeeded (vs all failed)
+      const anySucceeded = p.links.length > linkErrors.length
+      if (!anySucceeded) {
+        throw new Error(linkErrors.join(' | '))
+      }
+    }
+
+    return {
+      prospectId: p.id,
+      prospectName: p.name,
+      newItems: newCount,
+      queued: queuedCount,
+      ...(linkErrors.length > 0 ? { error: linkErrors.join(' | ') } : {})
+    }
   }
+}
+
+/**
+ * Clean up raw exec errors: strip the command line, keep the meaningful
+ * ERROR line (e.g. "ERROR: [instagram:user] ...: Unable to extract data").
+ */
+export function cleanError(raw: string): string {
+  const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+  // find the last ERROR: line (yt-dlp puts it at the end)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(/ERROR:\s*(.+)/)
+    if (m) {
+      let msg = m[1].trim()
+      // strip "please report this issue…" boilerplate
+      msg = msg.replace(/;?\s*please report this issue on.*$/i, '').trim()
+      return msg || 'Unknown error'
+    }
+  }
+  // fallback: first non-empty line, truncated
+  const first = lines[0] || 'Unknown error'
+  return first.length > 160 ? first.slice(0, 160) + '…' : first
 }
