@@ -4,7 +4,8 @@ import { promisify } from 'node:util'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Quality, type Tools } from '../download/engine'
-import { QueueManager } from '../download/queue'
+import { QueueManager, type NewTaskInput } from '../download/queue'
+import { HistoryStore } from '../history'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -160,6 +161,16 @@ async function toolPaths(): Promise<ToolPaths> {
 }
 
 let queue: QueueManager | null = null
+let history: HistoryStore | null = null
+
+function getHistory(): HistoryStore {
+  if (!history) {
+    history = new HistoryStore(path.join(app.getPath('userData'), 'history.json'), (entries) => {
+      if (mainWindow) mainWindow.webContents.send('history:update', entries)
+    })
+  }
+  return history
+}
 
 function getQueue(): QueueManager {
   if (!queue) {
@@ -169,6 +180,20 @@ function getQueue(): QueueManager {
       () => getSettings().downloadDir,
       (tasks) => {
         if (mainWindow) mainWindow.webContents.send('queue:update', tasks)
+      },
+      (task) => {
+        // finished task → history (last 100)
+        getHistory().add({
+          id: task.id,
+          url: task.url,
+          filename: task.filename || task.url,
+          engine: task.engine,
+          quality: task.quality,
+          status: task.status === 'done' ? 'done' : 'failed',
+          error: task.error,
+          downloaded: task.downloaded,
+          completedAt: Date.now()
+        })
       }
     )
     // settings is the source of truth for concurrency
@@ -185,11 +210,11 @@ async function requireEngines(): Promise<void> {
 }
 
 ipcMain.handle('queue:list', async () => getQueue().list())
-ipcMain.handle('queue:add', async (_event, opts: { url: string; quality: Quality }) => {
+ipcMain.handle('queue:add', async (_event, opts: { url: string; quality: Quality; scopeOpts?: NewTaskInput['scopeOpts'] }) => {
   const url = opts.url.trim()
   if (!/^https?:\/\//i.test(url)) throw new Error('Please paste a valid http(s) link')
   await requireEngines()
-  return getQueue().add(url, opts.quality)
+  return getQueue().add(url, opts.quality, opts.scopeOpts)
 })
 ipcMain.handle('queue:pause', async (_event, id: string) => {
   getQueue().pause(id)
@@ -209,6 +234,21 @@ ipcMain.handle('queue:cancel', async (_event, id: string) => {
 })
 ipcMain.handle('queue:clearDone', async () => {
   getQueue().clearDone()
+  return true
+})
+ipcMain.handle('queue:addBulk', async (_event, items: NewTaskInput[]) => {
+  await requireEngines()
+  const clean = (Array.isArray(items) ? items : [])
+    .filter((i) => i && typeof i.url === 'string' && /^https?:\/\//i.test(i.url.trim()))
+    .slice(0, 500)
+  return getQueue().addMany(clean)
+})
+
+// ---- IPC: history (Phase 1d, last 100 finished tasks) ----
+
+ipcMain.handle('history:list', async () => getHistory().list())
+ipcMain.handle('history:clear', async () => {
+  getHistory().clear()
   return true
 })
 
