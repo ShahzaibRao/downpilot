@@ -39,6 +39,8 @@ export interface DownloadProgress {
   speed: string
   eta: string
   filename: string
+  /** 'yt-dlp' | 'gallery' | '' (engine not yet chosen). -1 percent = indeterminate. */
+  engine: string
   error?: string
 }
 
