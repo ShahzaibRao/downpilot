@@ -1,10 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { DownloadJob, type Quality, type ProgressEvent, type Tools } from './engine'
+import { DownloadJob, defaultScopeOpts, type Quality, type ProgressEvent, type Tools, type ScopeOpts } from './engine'
 
 export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed'
 
-export interface Task {
+export interface Task extends ScopeOpts {
   id: string
   url: string
   quality: Quality
@@ -19,6 +19,17 @@ export interface Task {
   error?: string
   createdAt: number
   updatedAt: number
+}
+
+export interface NewTaskInput {
+  url: string
+  quality: Quality
+  scopeOpts?: ScopeOpts
+}
+
+/** Normalize a URL for duplicate detection. */
+export function normalizeUrl(url: string): string {
+  return url.trim().toLowerCase().replace(/\/$/, '')
 }
 
 let idCounter = 0
@@ -50,7 +61,8 @@ export class QueueManager {
     private filePath: string,
     private getTools: () => Promise<Tools>,
     private getOutDir: () => string,
-    private notify: (tasks: Task[]) => void
+    private notify: (tasks: Task[]) => void,
+    private onFinished?: (task: Task) => void
   ) {
     this.maxConcurrent = 1
     this.load()
@@ -60,8 +72,9 @@ export class QueueManager {
     return [...this.tasks.values()].sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  add(url: string, quality: Quality): Task {
+  add(url: string, quality: Quality, scopeOpts?: ScopeOpts): Task {
     const now = Date.now()
+    const so = { ...defaultScopeOpts(), ...scopeOpts }
     const task: Task = {
       id: newId(),
       url: url.trim(),
@@ -75,13 +88,59 @@ export class QueueManager {
       speed: '',
       eta: '',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      ...so
     }
     this.tasks.set(task.id, task)
     this.save()
     this.pump()
     this.notify(this.list())
     return task
+  }
+
+  /**
+   * Bulk add: duplicates (within the batch or already in the queue) are
+   * skipped. One save + one notify for the whole batch.
+   */
+  addMany(inputs: NewTaskInput[]): { added: number; skipped: number } {
+    const existing = new Set([...this.tasks.values()].map((t) => normalizeUrl(t.url)))
+    const seen = new Set<string>()
+    let added = 0
+    let skipped = 0
+    const now = Date.now()
+    for (const input of inputs) {
+      const norm = normalizeUrl(input.url)
+      if (!norm || seen.has(norm) || existing.has(norm)) {
+        skipped++
+        continue
+      }
+      seen.add(norm)
+      const so = { ...defaultScopeOpts(), ...input.scopeOpts }
+      const task: Task = {
+        id: newId(),
+        url: input.url.trim(),
+        quality: input.quality,
+        status: 'queued',
+        engine: '',
+        filename: '',
+        percent: 0,
+        downloaded: 0,
+        total: null,
+        speed: '',
+        eta: '',
+        createdAt: now,
+        updatedAt: now,
+        ...so
+      }
+      this.tasks.set(task.id, task)
+      added++
+    }
+    if (added > 0) {
+      this.save()
+      this.notify(this.list())
+      this.pump()
+    }
+    return { added, skipped }
   }
 
   pause(id: string): void {
@@ -191,7 +250,8 @@ export class QueueManager {
       this.getOutDir(),
       task.quality,
       tools,
-      (e: ProgressEvent) => this.onJobEvent(task.id, e)
+      (e: ProgressEvent) => this.onJobEvent(task.id, e),
+      { scope: task.scope, maxItems: task.maxItems, order: task.order }
     )
     this.jobs.set(task.id, job)
     job.start()
@@ -213,6 +273,7 @@ export class QueueManager {
       task.status = e.status === 'done' ? 'done' : 'failed'
       task.error = e.error
       if (e.status === 'done') task.percent = 100
+      this.onFinished?.(task)
     }
     this.save()
     this.notify(this.list())
