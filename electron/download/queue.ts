@@ -87,6 +87,7 @@ export class QueueManager {
   pause(id: string): void {
     const task = this.tasks.get(id)
     if (!task) return
+    console.log(`[queue] pause ${id} (status=${task.status})`)
     if (task.status === 'running') {
       this.jobs.get(id)?.cancel()
       this.jobs.delete(id)
