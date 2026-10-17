@@ -18,6 +18,46 @@
     </div>
 
     <div class="card">
+      <h3>Smart Mode <span class="muted" style="font-weight: normal; font-size: 13px;">(proxy)</span></h3>
+      <p class="muted">
+        Route downloads through your proxy — only for the platforms you check, so proxy
+        bandwidth isn't wasted. Everything else downloads direct.
+      </p>
+      <div class="row" style="margin-bottom: 10px; align-items: center;">
+        <label class="muted" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input v-model="smartEnabled" type="checkbox" @change="saveSmart" /> Enable Smart Mode
+        </label>
+      </div>
+      <div v-if="smartEnabled">
+        <div class="row" style="margin-bottom: 8px;">
+          <input v-model="proxyHost" class="url-input" placeholder="Proxy host (e.g. 1.2.3.4)" @change="saveSmart" />
+          <input v-model.number="proxyPort" type="number" min="1" max="65535" class="url-input" style="max-width: 110px;" placeholder="Port" @change="saveSmart" />
+        </div>
+        <div class="row" style="margin-bottom: 10px;">
+          <input v-model="proxyUser" class="url-input" placeholder="Username (optional)" @change="saveSmart" />
+          <input v-model="proxyPass" type="password" class="url-input" placeholder="Password (optional)" @change="saveSmart" />
+        </div>
+        <div class="row" style="margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
+          <span class="muted">Use proxy for:</span>
+          <label class="muted chk"><input type="checkbox" :checked="allPlatforms" @change="toggleAllPlatforms" /> All</label>
+          <label v-for="p in smartPlatforms" :key="p" class="muted chk">
+            <input type="checkbox" :checked="smartPlatformsChecked.includes(p)" @change="togglePlatform(p)" /> {{ p }}
+          </label>
+        </div>
+        <div class="row" style="margin-bottom: 8px; align-items: center;">
+          <button class="btn secondary" :disabled="proxyBusy" @click="doProxyTest">
+            {{ proxyBusy ? 'Testing…' : 'Test proxy' }}
+          </button>
+          <input v-model="siteTestUrl" class="url-input" placeholder="Site URL to test (e.g. https://www.tiktok.com)" />
+          <button class="btn secondary" :disabled="proxyBusy || !siteTestUrl.trim()" @click="doSiteTest">
+            Test site
+          </button>
+        </div>
+        <div v-if="proxyMsg" class="muted" style="font-size: 13px;">{{ proxyMsg }}</div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Cookie profiles</h3>
       <p class="muted">
         Log in to the site in your browser, export a <code>cookies.txt</code> (Netscape format),
@@ -84,9 +124,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import DepRow from '../components/DepRow.vue'
-import type { DepResult, DepsProgressEvent, CookieProfileMeta } from '../types'
+import type { DepResult, DepsProgressEvent, CookieProfileMeta, SmartModeConfig } from '../types'
 
 const deps = ref<DepResult[]>([])
 const loading = ref(true)
@@ -217,6 +257,88 @@ function formatDate(ts: number): string {
 
 let cookiesUnsubscribe: (() => void) | null = null
 
+// ---- Smart Mode (Phase 2c) ----
+
+const smartPlatforms = ['youtube', 'tiktok', 'x', 'instagram', 'snapchat', 'pinterest']
+const smartEnabled = ref(false)
+const proxyHost = ref('')
+const proxyPort = ref(8080)
+const proxyUser = ref('')
+const proxyPass = ref('')
+const smartPlatformsChecked = ref<string[]>(['all'])
+const proxyBusy = ref(false)
+const proxyMsg = ref('')
+const siteTestUrl = ref('')
+
+const allPlatforms = computed(() => smartPlatformsChecked.value.includes('all'))
+
+async function loadSmart() {
+  try {
+    const s = await window.dpApi.getSettings()
+    const sm: SmartModeConfig = s.smartMode ?? { enabled: false, proxy: { host: '', port: 8080, username: '', password: '' }, platforms: ['all'] }
+    smartEnabled.value = sm.enabled
+    proxyHost.value = sm.proxy.host
+    proxyPort.value = sm.proxy.port
+    proxyUser.value = sm.proxy.username
+    proxyPass.value = sm.proxy.password
+    smartPlatformsChecked.value = sm.platforms
+  } catch { /* ignore */ }
+}
+
+async function saveSmart() {
+  try {
+    await window.dpApi.setSettings({
+      smartMode: {
+        enabled: smartEnabled.value,
+        proxy: { host: proxyHost.value, port: proxyPort.value || 8080, username: proxyUser.value, password: proxyPass.value },
+        platforms: smartPlatformsChecked.value
+      }
+    })
+  } catch { /* ignore */ }
+}
+
+function togglePlatform(p: string) {
+  const cur = smartPlatformsChecked.value.filter((x) => x !== 'all')
+  if (cur.includes(p)) smartPlatformsChecked.value = cur.filter((x) => x !== p)
+  else smartPlatformsChecked.value = [...cur, p]
+  if (smartPlatformsChecked.value.length === 0) smartPlatformsChecked.value = ['all']
+  saveSmart()
+}
+
+function toggleAllPlatforms() {
+  // "All" checkbox: checked → ['all']; unchecked → individual picks (start empty)
+  smartPlatformsChecked.value = allPlatforms.value ? [] : ['all']
+  saveSmart()
+}
+
+async function doProxyTest() {
+  proxyBusy.value = true
+  proxyMsg.value = ''
+  try {
+    await saveSmart()
+    const r = await window.dpApi.proxyTest()
+    proxyMsg.value = `Proxy works ✓ — exit IP: ${r.ip}`
+  } catch (e) {
+    proxyMsg.value = `Proxy failed: ${(e as Error).message}`
+  } finally {
+    proxyBusy.value = false
+  }
+}
+
+async function doSiteTest() {
+  proxyBusy.value = true
+  proxyMsg.value = ''
+  try {
+    await saveSmart()
+    const r = await window.dpApi.proxyTestSite(siteTestUrl.value)
+    proxyMsg.value = `Site reachable via proxy ✓ (HTTP ${r.status}) — not blocked`
+  } catch (e) {
+    proxyMsg.value = `Site test: ${(e as Error).message}`
+  } finally {
+    proxyBusy.value = false
+  }
+}
+
 async function changeDir() {
   const dir = await window.dpApi.pickDownloadDir()
   if (dir) {
@@ -230,6 +352,7 @@ onMounted(() => {
   refresh()
   loadSettings()
   loadCookies()
+  loadSmart()
 })
 
 onUnmounted(() => {
@@ -254,5 +377,6 @@ textarea.url-input { width: 100%; resize: vertical; font-family: monospace; font
 .preview-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .spacer { flex: 1; }
 .btn.small { padding: 4px 12px; font-size: 12px; }
+.chk { display: flex; align-items: center; gap: 4px; cursor: pointer; text-transform: capitalize; }
 code { background: #24282f; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 </style>
