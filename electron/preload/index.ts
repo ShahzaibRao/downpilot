@@ -74,7 +74,7 @@ contextBridge.exposeInMainWorld('dpApi', {
   potForceStop: () => ipcRenderer.invoke('pot:forceStop'),
   // prospects (Phase 3)
   prospectsList: () => ipcRenderer.invoke('prospects:list'),
-  prospectsAdd: (url: string, name?: string) => ipcRenderer.invoke('prospects:add', url, name),
+  prospectsAdd: (url: string, name?: string, quality?: string) => ipcRenderer.invoke('prospects:add', url, name, quality),
   prospectsAddLink: (prospectId: string, url: string) => ipcRenderer.invoke('prospects:addLink', prospectId, url),
   prospectsRemoveLink: (prospectId: string, linkId: string) => ipcRenderer.invoke('prospects:removeLink', prospectId, linkId),
   prospectsRemove: (id: string) => ipcRenderer.invoke('prospects:remove', id),
