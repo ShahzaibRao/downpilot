@@ -42,6 +42,21 @@ contextBridge.exposeInMainWorld('dpApi', {
     return () => ipcRenderer.removeListener('queue:update', handler)
   },
 
+  /** Add many URLs at once (duplicates auto-skipped). Returns {added, skipped}. */
+  queueAddBulk: (items: { url: string; quality: string; scopeOpts?: Record<string, unknown> }[]) =>
+    ipcRenderer.invoke('queue:addBulk', items),
+
+  // ---- history (Phase 1d) ----
+  historyList: () => ipcRenderer.invoke('history:list'),
+  historyClear: () => ipcRenderer.invoke('history:clear'),
+
+  /** Subscribe to history updates. Returns an unsubscribe function. */
+  onHistoryUpdate: (cb: (entries: Record<string, unknown>[]) => void) => {
+    const handler = (_event: unknown, entries: Record<string, unknown>[]) => cb(entries)
+    ipcRenderer.on('history:update', handler)
+    return () => ipcRenderer.removeListener('history:update', handler)
+  },
+
   // ---- settings ----
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch),
