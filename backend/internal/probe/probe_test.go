@@ -29,14 +29,14 @@ func TestParseVersion(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := ParseVersion(c.tool, c.out); got != c.want {
-			t.Errorf("ParseVersion(%q, %q) = %q, 期望 %q", c.tool, c.out, got, c.want)
+			t.Errorf("ParseVersion(%q, %q) = %q, expected %q", c.tool, c.out, got, c.want)
 		}
 	}
 }
 
 func TestMajor(t *testing.T) {
 	cases := map[string]int{
-		"2026.10.10.233141": 2026, // yt-dlp 日期版本 -> 年份
+		"2026.10.10.233141": 2026, // yt-dlp date version -> year
 		"6.0":               6,
 		"n7.1-static":       7,
 		"":                  0,
@@ -44,17 +44,17 @@ func TestMajor(t *testing.T) {
 	}
 	for in, want := range cases {
 		if got := Major(in); got != want {
-			t.Errorf("Major(%q) = %d, 期望 %d", in, got, want)
+			t.Errorf("Major(%q) = %d, expected %d", in, got, want)
 		}
 	}
 }
 
 func TestMinimumMajorRejectsStaleYtDlp(t *testing.T) {
-	// 2022 年的 yt-dlp 大量站点已失效，应判为不可用
+	// yt-dlp from 2022 is broken on many sites and should count as unusable
 	if got := Major("2022.11.11"); got >= MinimumMajor["yt-dlp"] {
-		t.Errorf("2022.11.11 应低于最低要求 %d，实际判定 %d", MinimumMajor["yt-dlp"], got)
+		t.Errorf("2022.11.11 should be below the minimum %d, judged %d", MinimumMajor["yt-dlp"], got)
 	}
 	if got := Major("2026.10.10"); got < MinimumMajor["yt-dlp"] {
-		t.Errorf("2026.10.10 应满足最低要求 %d，实际判定 %d", MinimumMajor["yt-dlp"], got)
+		t.Errorf("2026.10.10 should meet the minimum %d, judged %d", MinimumMajor["yt-dlp"], got)
 	}
 }
