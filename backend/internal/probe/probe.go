@@ -35,18 +35,22 @@ const SystemCandidateTimeout = 5 * time.Second
 
 // Args 各工具的版本探测参数
 var Args = map[string][]string{
-	"yt-dlp":  {"--version"},
-	"ffmpeg":  {"-version"},
-	"ffprobe": {"-version"},
+	"yt-dlp":     {"--version"},
+	"ffmpeg":     {"-version"},
+	"ffprobe":    {"-version"},
+	"gallery-dl": {"--version"},
+	"deno":       {"--version"},
 }
 
 // MinimumMajor 判断工具是否可用的最低主版本号。
 // yt-dlp 使用日期版本号（2026.10.10），因此主版本号是年份：
 // 早于 2024 的版本大量站点已失效，建议重新下载。
 var MinimumMajor = map[string]int{
-	"yt-dlp":  2024,
-	"ffmpeg":  4,
-	"ffprobe": 4,
+	"yt-dlp":     2024,
+	"ffmpeg":     4,
+	"ffprobe":    4,
+	"gallery-dl": 1,
+	"deno":       1,
 }
 
 // Info 一次成功的版本探测结果
@@ -59,6 +63,11 @@ type Info struct {
 var (
 	reFFmpegVersion = regexp.MustCompile(`version\s+(\S+)`)
 	reYtDlpVersion  = regexp.MustCompile(`^\d{4}\.\d{2}\.\d{2}(?:\.\d+)?$`)
+	// gallery-dl nightly 的版本形如 "1.33.0-dev:2026.10.17"：有意义的是冒号后的日期
+	// （与清单里 pin 的 GalleryDlTag 同格式）；stable 版则直接是 "1.32.16"
+	reGalleryDlDate    = regexp.MustCompile(`(\d{4}\.\d{2}\.\d{2})\s*$`)
+	reGalleryDlVersion = regexp.MustCompile(`^(\d+\.\d+\.\d+)`)
+	reDenoVersion   = regexp.MustCompile(`^deno\s+(\S+)`)
 	reDigits        = regexp.MustCompile(`\d+`)
 	reKilled        = regexp.MustCompile(`(?i)killed|signal: 9`)
 )
@@ -114,6 +123,23 @@ func ParseVersion(tool, out string) string {
 	// yt-dlp：直接输出版本号
 	if tool == "yt-dlp" && reYtDlpVersion.MatchString(line) {
 		return line
+	}
+	// gallery-dl：nightly 首行如 "1.33.0-dev:2026.10.17"（取日期），stable 如 "1.32.16"
+	if tool == "gallery-dl" {
+		if m := reGalleryDlDate.FindStringSubmatch(line); len(m) == 2 {
+			return m[1]
+		}
+		if m := reGalleryDlVersion.FindStringSubmatch(line); len(m) == 2 {
+			return m[1]
+		}
+		return ""
+	}
+	// deno：首行如 "deno 2.9.7 (stable, release, x86_64-...)"
+	if tool == "deno" {
+		if m := reDenoVersion.FindStringSubmatch(line); len(m) == 2 {
+			return m[1]
+		}
+		return ""
 	}
 	return ""
 }
