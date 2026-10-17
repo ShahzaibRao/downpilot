@@ -512,6 +512,14 @@ ipcMain.handle('prospects:checkNow', async () => {
   return getProspectScheduler().checkAll()
 })
 
+ipcMain.handle('prospects:checkOne', async (_event, id: string) => {
+  return getProspectScheduler().checkOne(id)
+})
+
+ipcMain.handle('prospects:updateLink', async (_event, prospectId: string, linkId: string, newUrl: string) => {
+  return getProspectStore().updateLink(prospectId, linkId, newUrl)
+})
+
 // ---- IPC: notifications (Phase 3c) ----
 
 ipcMain.handle('notify:list', async () => {
