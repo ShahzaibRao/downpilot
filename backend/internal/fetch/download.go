@@ -1,7 +1,7 @@
-// Package fetch 负责下载并安装 yt-dlp / ffmpeg / ffprobe / gallery-dl / deno 到托管目录。
+// Package fetch downloads and installs yt-dlp / ffmpeg / ffprobe / gallery-dl / deno into the managed dir.
 //
-// 下载先落到临时文件并做 SHA-256 校验，校验通过后才解压并原子重命名，
-// 因此不会因为网络中断或损坏的镜像而装上一个半成品可执行文件。
+// Downloads land in a temp file and go through SHA-256 verification; only after passing
+// do they get extracted and atomically renamed, so a network blip or corrupt mirror
 package fetch
 
 import (
@@ -24,7 +24,9 @@ import (
 	"time"
 )
 
-// Event 一条进度事件，CLI 会逐行输出为 NDJSON
+// can never leave a half-installed executable behind.
+
+// Event is a progress event; the CLI prints them as NDJSON, one per line
 type Event struct {
 	Event      string `json:"event"`
 	Tool       string `json:"tool,omitempty"`
@@ -34,30 +36,30 @@ type Event struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// Emitter 接收进度事件
+// Emitter receives progress events
 type Emitter func(Event)
 
-// Task 一次安装任务
+// Task is a single install job
 type Task struct {
 	Tool   string // yt-dlp / ffmpeg / ffprobe / gallery-dl / deno
 	URL    string
-	SHA256 string // 下载内容的校验值（gzip/zip 时为压缩文件的哈希）
+	SHA256 string // checksum of the downloaded bytes (of the archive itself when gzip/zip)
 	Gzip   bool
-	// Zip 为 true 时从 zip 包中提取单个文件；ZipInner 为包内路径
-	// （为空时取压缩包内第一个文件）。与 Gzip 互斥。
+	// When Zip is true, extract a single file from the zip; ZipInner is the in-archive path
+	// (empty means the first file in the archive). Mutually exclusive with Gzip.
 	Zip      bool
 	ZipInner string
-	Target   string // 最终安装路径
+	Target   string // final install path
 }
 
-// Options 下载选项
+// Options are download options
 type Options struct {
 	Proxy      string
 	Timeout    time.Duration
 	Retries    int
 	HTTPClient *http.Client
 	Emit       Emitter
-	// SkipSign 跳过 macOS 的 ad-hoc 签名（测试用）
+	// SkipSign skips the macOS ad-hoc signing (for tests)
 	SkipSign bool
 }
 
@@ -75,7 +77,7 @@ func (o *Options) client() (*http.Client, error) {
 	if o.Proxy != "" {
 		u, err := url.Parse(o.Proxy)
 		if err != nil {
-			return nil, fmt.Errorf("代理地址无效：%w", err)
+			return nil, fmt.Errorf("invalid proxy address: %w", err)
 		}
 		transport.Proxy = http.ProxyURL(u)
 	} else {
@@ -88,10 +90,10 @@ func (o *Options) client() (*http.Client, error) {
 	return &http.Client{Transport: transport, Timeout: timeout}, nil
 }
 
-// Install 依次执行全部任务；任一任务失败即返回，已完成的任务保留
+// Install runs all tasks in order; returns on the first failure, keeping completed tasks
 func Install(ctx context.Context, tasks []Task, opts Options) error {
 	if len(tasks) == 0 {
-		return errors.New("没有需要下载的依赖")
+		return errors.New("no dependencies to download")
 	}
 	client, err := opts.client()
 	if err != nil {
@@ -113,13 +115,13 @@ func Install(ctx context.Context, tasks []Task, opts Options) error {
 
 func installOne(ctx context.Context, task Task, opts Options) error {
 	if task.Target == "" {
-		return errors.New("安装路径为空")
+		return errors.New("install path is empty")
 	}
 	if err := os.MkdirAll(filepath.Dir(task.Target), 0o755); err != nil {
-		return fmt.Errorf("创建目录失败：%w", err)
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// 先下到临时文件，校验/解压通过后再原子替换目标文件
+	// Download to a temp file first; atomically replace the target only after verify/extract
 	staging := task.Target + ".part"
 	if task.Gzip {
 		staging += ".gz"
@@ -138,7 +140,7 @@ func installOne(ctx context.Context, task Task, opts Options) error {
 	var lastErr error
 	for attempt := 1; attempt <= retries; attempt++ {
 		if attempt > 1 {
-			opts.emit(Event{Event: "retry", Tool: task.Tool, Message: fmt.Sprintf("第 %d 次重试", attempt)})
+			opts.emit(Event{Event: "retry", Tool: task.Tool, Message: fmt.Sprintf("retry %d", attempt)})
 			select {
 			case <-time.After(time.Duration(attempt-1) * 2 * time.Second):
 			case <-ctx.Done():
@@ -159,7 +161,7 @@ func installOne(ctx context.Context, task Task, opts Options) error {
 	return promote(task, staging)
 }
 
-// fetchOnce 下载并校验，结果写到 staging；gzip 的校验针对压缩文件本身
+// fetchOnce downloads and verifies into staging; for gzip the checksum covers the archive itself
 func fetchOnce(ctx context.Context, task Task, staging string, opts Options) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, task.URL, nil)
 	if err != nil {
@@ -169,17 +171,17 @@ func fetchOnce(ctx context.Context, task Task, staging string, opts Options) err
 
 	res, err := opts.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("网络请求失败：%s%s", sanitizeURL(err.Error()), networkHint(err))
+		return fmt.Errorf("network request failed: %s%s", sanitizeURL(err.Error()), networkHint(err))
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载失败：HTTP %d %s", res.StatusCode, res.Status)
+		return fmt.Errorf("download failed: HTTP %d %s", res.StatusCode, res.Status)
 	}
 
 	file, err := os.Create(staging)
 	if err != nil {
-		return fmt.Errorf("创建临时文件失败：%w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	hasher := sha256.New()
@@ -187,26 +189,26 @@ func fetchOnce(ctx context.Context, task Task, staging string, opts Options) err
 	_, copyErr := io.Copy(io.MultiWriter(file, hasher, counter), res.Body)
 	closeErr := file.Close()
 	if copyErr != nil {
-		return fmt.Errorf("下载中断：%w", copyErr)
+		return fmt.Errorf("download interrupted: %w", copyErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("写入文件失败：%w", closeErr)
+		return fmt.Errorf("failed to write file: %w", closeErr)
 	}
 
 	if task.SHA256 != "" {
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if !strings.EqualFold(got, task.SHA256) {
-			return fmt.Errorf("校验失败：期望 %s…，实际 %s…", short(task.SHA256), short(got))
+			return fmt.Errorf("checksum mismatch: expected %s\u2026, got %s\u2026", short(task.SHA256), short(got))
 		}
 	}
 	return nil
 }
 
-// promote 解压（如需要）、赋权并原子替换目标文件
+// promote extracts (if needed), sets exec permission, and atomically replaces the target
 func promote(task Task, staging string) error {
 	source := staging
 	if task.Gzip {
-		decompressed := staging[:len(staging)-3] // 去掉 .gz
+		decompressed := staging[:len(staging)-3] // strip .gz
 		if err := gunzipFile(staging, decompressed); err != nil {
 			return err
 		}
@@ -214,7 +216,7 @@ func promote(task Task, staging string) error {
 		source = decompressed
 	}
 	if task.Zip {
-		extracted := staging[:len(staging)-4] // 去掉 .zip
+		extracted := staging[:len(staging)-4] // strip .zip
 		if err := unzipSingleFile(staging, task.ZipInner, extracted); err != nil {
 			return err
 		}
@@ -223,55 +225,55 @@ func promote(task Task, staging string) error {
 	}
 
 	if err := os.Chmod(source, 0o755); err != nil {
-		return fmt.Errorf("设置执行权限失败：%w", err)
+		return fmt.Errorf("failed to set executable permission: %w", err)
 	}
-	// 先删旧文件：Windows 上无法覆盖正在运行的 exe，但可以重命名
+	// Remove the old file first: Windows cannot overwrite a running exe, but it can rename it
 	_ = os.Remove(task.Target)
 	if err := os.Rename(source, task.Target); err != nil {
-		return fmt.Errorf("替换 %s 失败：%w", task.Target, err)
+		return fmt.Errorf("failed to replace %s: %w", task.Target, err)
 	}
 	return nil
 }
 
-// gunzipFile 解压单成员 gzip；ffmpeg-static 发布的就是裸 gzip 流（不是 tar.gz）
+// gunzipFile extracts a single-member gzip; ffmpeg-static ships raw gzip streams (not tar.gz)
 func gunzipFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("打开临时文件失败：%w", err)
+		return fmt.Errorf("failed to open temp file: %w", err)
 	}
 	defer in.Close()
 
 	zr, err := gzip.NewReader(in)
 	if err != nil {
-		return errors.New("解压失败：" + err.Error())
+		return errors.New("extraction failed: " + err.Error())
 	}
 	defer zr.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("创建文件失败：%w", err)
+		return fmt.Errorf("failed to create file: %w", err)
 	}
 	if _, err := io.Copy(out, zr); err != nil {
 		out.Close()
 		os.Remove(dst)
-		return fmt.Errorf("解压失败：%w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(dst)
-		return fmt.Errorf("写入文件失败：%w", err)
+		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
 }
 
-// unzipSingleFile 从 zip 包中提取单个文件。
+// unzipSingleFile extracts a single file from a zip archive.
 //
-// inner 为空时取包内第一个文件；否则按路径精确匹配。
-// 只允许提取单个文件（拒绝目录穿越：清理后的路径必须仍在包内），
-// 因为我们的用途就是"拿一个可执行文件出来"。
+// An empty inner takes the first file in the archive; otherwise match by path exactly.
+// Only a single file may be extracted (no directory traversal: the cleaned path must stay
+// inside the archive) — our use case is literally "get one executable out".
 func unzipSingleFile(src, inner, dst string) error {
 	zr, err := zip.OpenReader(src)
 	if err != nil {
-		return fmt.Errorf("解压失败：%w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 	defer zr.Close()
 
@@ -290,33 +292,33 @@ func unzipSingleFile(src, inner, dst string) error {
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("解压失败：zip 包中没有 %q", inner)
+		return fmt.Errorf("extraction failed: no %q in the zip archive", inner)
 	}
 
 	rc, err := target.Open()
 	if err != nil {
-		return fmt.Errorf("解压失败：%w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 	defer rc.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("创建文件失败：%w", err)
+		return fmt.Errorf("failed to create file: %w", err)
 	}
 	if _, err := io.Copy(out, rc); err != nil {
 		out.Close()
 		os.Remove(dst)
-		return fmt.Errorf("解压失败：%w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(dst)
-		return fmt.Errorf("写入文件失败：%w", err)
+		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
 }
 
-// Finalize 做安装后的平台处理：macOS 清理隔离属性并 ad-hoc 签名。
-// 从网络下载的可执行文件带 com.apple.quarantine，在 Apple Silicon 上会直接 "killed: 9"。
+// Finalize does post-install platform handling: on macOS clear quarantine attrs and ad-hoc sign.
+// Executables downloaded from the network carry com.apple.quarantine; on Apple Silicon they get "killed: 9" outright.
 func Finalize(path string, opts Options, emit Emitter) {
 	if runtime.GOOS != "darwin" || opts.SkipSign {
 		return
@@ -325,10 +327,10 @@ func Finalize(path string, opts Options, emit Emitter) {
 		emit = func(Event) {}
 	}
 	if err := runQuiet("xattr", "-c", path); err != nil {
-		emit(Event{Event: "warn", Message: "清理隔离属性失败：" + err.Error()})
+		emit(Event{Event: "warn", Message: "failed to clear quarantine attribute: " + err.Error()})
 	}
 	if err := runQuiet("codesign", "--force", "--sign", "-", path); err != nil {
-		emit(Event{Event: "warn", Message: "ad-hoc 签名失败：" + err.Error()})
+		emit(Event{Event: "warn", Message: "ad-hoc signing failed: " + err.Error()})
 	}
 }
 
@@ -345,7 +347,7 @@ func runQuiet(name string, args ...string) error {
 	return nil
 }
 
-// progressCounter 按 1% 的步进上报进度，避免刷屏
+// progressCounter reports progress in 1% steps to avoid spamming
 type progressCounter struct {
 	tool    string
 	total   int64
@@ -380,25 +382,25 @@ func short(hash string) string {
 	return hash[:12]
 }
 
-// reQueryString 匹配 URL 的查询串
+// reQueryString matches the query string of a URL
 var reQueryString = regexp.MustCompile(`\?[^\s"]*`)
 
-// sanitizeURL 去掉 URL 的查询串。
+// sanitizeURL strips the query string from a URL.
 //
-// GitHub 的下载地址会带一串超长签名 JWT，直接展示给用户既看不懂也占满界面，
-// 只保留 主机/路径 就够了。
+// GitHub download URLs carry a very long signed JWT; showing it to users is both
+// unreadable and fills the whole UI, so keep only host/path.
 func sanitizeURL(msg string) string {
 	return reQueryString.ReplaceAllString(msg, "")
 }
 
-// networkHint 针对常见网络故障补一句可执行的建议
+// networkHint appends an actionable suggestion for common network failures
 func networkHint(err error) string {
 	msg := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(msg, "proxyconnect"), strings.Contains(msg, "proxy"):
-		return "\n\n提示：代理不可用，请在「设置 → 代理」中检查代理地址后重试。"
+		return "\n\nHint: the proxy is unreachable. Check the proxy address under Settings → Proxy and retry."
 	case strings.Contains(msg, "tls"), strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline"):
-		return "\n\n提示：连接超时。若所在网络需要代理，请在「设置 → 代理」中配置后重试。"
+		return "\n\nHint: connection timed out. If your network needs a proxy, configure it under Settings → Proxy and retry."
 	}
 	return ""
 }
