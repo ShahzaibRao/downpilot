@@ -10,35 +10,35 @@ import (
 
 var reSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// 每个受支持的平台都必须能生成完整任务，否则 CI 构建出来的 sidecar 会在用户机上失败
+// every supported platform must generate complete tasks, or the CI-built sidecar fails on user machines
 func TestTasksCoverEveryPlatform(t *testing.T) {
 	for _, platform := range Platforms {
 		if _, ok := ytdlpAssets[platform]; !ok {
-			t.Errorf("平台 %s 缺少 yt-dlp 产物", platform)
+			t.Errorf("platform %s is missing the yt-dlp artifact", platform)
 		}
 		if _, ok := ffmpegAssets[platform]; !ok {
-			t.Errorf("平台 %s 缺少 ffmpeg 产物", platform)
+			t.Errorf("platform %s is missing the ffmpeg artifact", platform)
 		}
 	}
 }
 
 func TestAssetNamesAndHashesWellFormed(t *testing.T) {
-	// 清单文件是生成出来的；哈希必须齐全，否则校验形同虚设
+	// the manifest file is generated; hashes must be complete, or verification is theater
 	for platform, a := range ytdlpAssets {
 		if a.Name == "" {
-			t.Errorf("%s 的 yt-dlp 产物名为空", platform)
+			t.Errorf("%s: yt-dlp artifact name is empty", platform)
 		}
 		if !reSHA256.MatchString(a.SHA256) {
-			t.Errorf("%s 的 yt-dlp 校验值不是 64 位十六进制（清单可能未更新）：%q", platform, a.SHA256)
+			t.Errorf("%s: yt-dlp checksum is not 64 hex chars (manifest may be stale): %q", platform, a.SHA256)
 		}
 	}
 	for platform, byKind := range ffmpegAssets {
 		for kind, a := range byKind {
 			if a.Name == "" {
-				t.Errorf("%s/%s 产物名为空", platform, kind)
+				t.Errorf("%s/%s: artifact name is empty", platform, kind)
 			}
 			if !reSHA256.MatchString(a.SHA256) {
-				t.Errorf("%s/%s 校验值不是 64 位十六进制：%q", platform, kind, a.SHA256)
+				t.Errorf("%s/%s: checksum is not 64 hex chars: %q", platform, kind, a.SHA256)
 			}
 		}
 	}
@@ -47,69 +47,69 @@ func TestAssetNamesAndHashesWellFormed(t *testing.T) {
 func TestTasksForCurrentPlatform(t *testing.T) {
 	tasks, err := Tasks("/tmp/downpilot-runtime/bin", nil)
 	if err != nil {
-		t.Skipf("当前平台 %s 无下载任务：%v", CurrentPlatform(), err)
+		t.Skipf("no download tasks for current platform %s: %v", CurrentPlatform(), err)
 	}
 	if len(tasks) == 0 {
-		t.Fatal("应至少生成一个下载任务")
+		t.Fatal("should generate at least one download task")
 	}
 
 	seen := map[string]bool{}
 	for _, task := range tasks {
 		if task.Tool == "" || task.URL == "" || task.Target == "" {
-			t.Errorf("任务字段不完整：%+v", task)
+			t.Errorf("task has incomplete fields: %+v", task)
 		}
 		if !reSHA256.MatchString(task.SHA256) {
-			t.Errorf("%s 缺少有效校验值：%q", task.Tool, task.SHA256)
+			t.Errorf("%s: missing valid checksum: %q", task.Tool, task.SHA256)
 		}
-		// ffmpeg / ffprobe 走 gzip 单文件，yt-dlp / gallery-dl 是裸二进制，deno 是 zip 包
+		// ffmpeg / ffprobe use single-file gzip, yt-dlp / gallery-dl are bare binaries, deno is a zip
 		if task.Tool == "yt-dlp" && task.Gzip {
-			t.Error("yt-dlp 不应标记为 gzip")
+			t.Error("yt-dlp should not be marked gzip")
 		}
 		if task.Tool == "gallery-dl" && (task.Gzip || task.Zip) {
-			t.Error("gallery-dl 是裸二进制，不应标记为 gzip/zip")
+			t.Error("gallery-dl is a bare binary, should not be marked gzip/zip")
 		}
 		if task.Tool == "deno" && !task.Zip {
-			t.Error("deno 应标记为 zip")
+			t.Error("deno should be marked zip")
 		}
 		if (task.Tool == "ffmpeg" || task.Tool == "ffprobe") && !task.Gzip {
-			t.Errorf("%s 应标记为 gzip", task.Tool)
+			t.Errorf("%s should be marked gzip", task.Tool)
 		}
 		seen[task.Tool] = true
 	}
 
 	if !seen["yt-dlp"] || !seen["ffmpeg"] {
-		t.Errorf("必须包含 yt-dlp 与 ffmpeg，实际：%v", seen)
+		t.Errorf("must include yt-dlp and ffmpeg, got: %v", seen)
 	}
 }
 
 func TestTasksOnlyFilter(t *testing.T) {
 	tasks, err := Tasks("/tmp/downpilot-runtime/bin", []string{"ffmpeg"})
 	if err != nil {
-		t.Skipf("当前平台无任务：%v", err)
+		t.Skipf("no tasks for current platform: %v", err)
 	}
 	for _, task := range tasks {
 		if task.Tool != "ffmpeg" {
-			t.Errorf("--only ffmpeg 时不应出现 %s", task.Tool)
+			t.Errorf("--only ffmpeg should not include %s", task.Tool)
 		}
 	}
 }
 
-// Windows arm64 上游没有 ffmpeg 构建：应跳过而不是让整机不可用
+// no upstream ffmpeg build for Windows arm64: skip instead of making the whole machine unusable
 func TestWindowsArm64FfmpegIsSkippedNotFatal(t *testing.T) {
 	if _, ok := ffmpegAssets["win32/arm64"]; ok {
-		t.Skip("上游已提供 Windows arm64 构建，可移除本用例")
+		t.Skip("upstream now provides Windows arm64 builds; this case can be removed")
 	}
 	if _, err := Tasks("/tmp/x", []string{"ffmpeg"}); err != nil {
-		// 当前平台若不支持，Tasks 允许报错；这里只确认不会 panic
-		t.Logf("当前平台无 ffmpeg 任务：%v", err)
+		// Tasks may error if the current platform is unsupported; here just confirm no panic
+		t.Logf("no ffmpeg task for current platform: %v", err)
 	}
 }
 
-// win32/x64 必须包含 gallery-dl（裸二进制）与 deno（zip 包，取 deno.exe）
+// win32/x64 must include gallery-dl (bare binary) and deno (zip, extract deno.exe)
 func TestWin32TasksIncludeGalleryDlAndDeno(t *testing.T) {
 	tasks, err := TasksFor("win32/x64", `C:\tmp\downpilot-runtime\bin`, nil)
 	if err != nil {
-		t.Fatalf("win32/x64 应生成下载任务：%v", err)
+		t.Fatalf("win32/x64 should generate download tasks: %v", err)
 	}
 	byTool := map[string]fetch.Task{}
 	for _, task := range tasks {
@@ -118,36 +118,36 @@ func TestWin32TasksIncludeGalleryDlAndDeno(t *testing.T) {
 
 	g, ok := byTool["gallery-dl"]
 	if !ok {
-		t.Fatal("缺少 gallery-dl 任务")
+		t.Fatal("missing gallery-dl task")
 	}
 	if g.Gzip || g.Zip {
-		t.Error("gallery-dl 是裸二进制，不应标记 gzip/zip")
+		t.Error("gallery-dl is a bare binary, should not be marked gzip/zip")
 	}
 	if !strings.HasSuffix(g.Target, "gallery-dl.exe") {
-		t.Errorf("gallery-dl 目标文件名应为 gallery-dl.exe，实际 %q", g.Target)
+		t.Errorf("gallery-dl target file name should be gallery-dl.exe, got %q", g.Target)
 	}
 
 	d, ok := byTool["deno"]
 	if !ok {
-		t.Fatal("缺少 deno 任务")
+		t.Fatal("missing deno task")
 	}
 	if !d.Zip || d.ZipInner != "deno.exe" {
-		t.Errorf("deno 应为 zip 包并提取 deno.exe，实际 %+v", d)
+		t.Errorf("deno should be a zip extracting deno.exe, got %+v", d)
 	}
 	if !strings.HasSuffix(d.Target, "deno.exe") {
-		t.Errorf("deno 目标文件名应为 deno.exe，实际 %q", d.Target)
+		t.Errorf("deno target file name should be deno.exe, got %q", d.Target)
 	}
 }
 
-// linux/arm64 上游无 gallery-dl 构建：应跳过而不是报错
+// no upstream gallery-dl build for linux/arm64: skip instead of erroring
 func TestLinuxArm64SkipsGalleryDl(t *testing.T) {
 	tasks, err := TasksFor("linux/arm64", "/tmp/x", nil)
 	if err != nil {
-		t.Fatalf("linux/arm64 应生成下载任务：%v", err)
+		t.Fatalf("linux/arm64 should generate download tasks: %v", err)
 	}
 	for _, task := range tasks {
 		if task.Tool == "gallery-dl" {
-			t.Error("linux/arm64 不应包含 gallery-dl 任务（上游无构建）")
+			t.Error("linux/arm64 should not include a gallery-dl task (no upstream build)")
 		}
 	}
 }
