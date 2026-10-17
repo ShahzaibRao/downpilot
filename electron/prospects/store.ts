@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import type { Quality } from '../download/engine'
 
 export type ProspectStatus = 'ok' | 'paused' | 'error'
 
@@ -16,6 +17,8 @@ export interface Prospect {
   links: ProspectLink[]
   /** folder name under <downloadDir>/prospects/ */
   folder: string
+  /** download quality for this prospect's content */
+  quality: Quality
   status: ProspectStatus
   /** consecutive check failures; 3 → auto-pause */
   failCount: number
@@ -96,7 +99,7 @@ export class ProspectStore {
     return this.prospects.find((p) => p.id === id)
   }
 
-  add(url: string, name?: string): Prospect {
+  add(url: string, name?: string, quality?: Quality): Prospect {
     const info = prospectNameFromUrl(url)
     const displayName = (name ?? info.name).trim() || info.name
     // unique folder: name, name-2, name-3…
@@ -109,6 +112,7 @@ export class ProspectStore {
       name: displayName,
       links: [{ id: newId('l'), url: url.trim(), platform: info.platform }],
       folder,
+      quality: quality ?? 'best',
       status: 'ok',
       failCount: 0,
       lastCheck: null,
@@ -175,6 +179,14 @@ export class ProspectStore {
     return p
   }
 
+  setQuality(id: string, quality: Quality): Prospect {
+    const p = this.get(id)
+    if (!p) throw new Error('Prospect not found')
+    p.quality = quality
+    this.save()
+    return p
+  }
+
   setStatus(id: string, status: ProspectStatus, error?: string | null): void {
     const p = this.get(id)
     if (!p) return
@@ -223,7 +235,13 @@ export class ProspectStore {
     try {
       const raw = fs.readFileSync(prospectsFile(), 'utf8')
       const arr = JSON.parse(raw)
-      if (Array.isArray(arr)) this.prospects = arr
+      if (Array.isArray(arr)) {
+        this.prospects = arr
+        // backfill quality for prospects saved before the field existed
+        for (const p of this.prospects) {
+          if (!p.quality) p.quality = 'best'
+        }
+      }
     } catch {
       this.prospects = []
     }
