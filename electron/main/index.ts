@@ -77,7 +77,7 @@ function createWindow(): void {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    // DevTools: Ctrl+Shift+I se kholo (auto-open hata diya — extra window tang karti hai)
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
