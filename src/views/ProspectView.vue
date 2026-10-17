@@ -96,6 +96,20 @@
       <div class="muted" style="font-size: 12px; margin-top: 4px;">
         Folder: prospects/{{ p.folder }}
         <span v-if="p.lastCheck"> · Last check: {{ formatTime(p.lastCheck) }}</span>
+        <span> · Next: {{ nextCheckIn(p) }}</span>
+      </div>
+      <!-- per-prospect download progress -->
+      <div v-if="progressFor(p.id)" style="margin-top: 8px;">
+        <div class="row" style="font-size: 12px; margin-bottom: 4px;">
+          <span class="muted">
+            {{ progressFor(p.id)!.done }}/{{ progressFor(p.id)!.total }} downloaded
+            <span v-if="progressFor(p.id)!.active > 0"> · {{ progressFor(p.id)!.active }} active</span>
+            <span v-if="progressFor(p.id)!.failed > 0" style="color: #f87171;"> · {{ progressFor(p.id)!.failed }} failed</span>
+          </span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" :style="{ width: Math.round(progressFor(p.id)!.done / progressFor(p.id)!.total * 100) + '%' }"></div>
+        </div>
       </div>
       <!-- links -->
       <div class="preview" style="margin-top: 8px;">
@@ -138,7 +152,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import type { Prospect, CheckResult, HistoryEntry, Quality } from '../types'
+import type { Prospect, CheckResult, HistoryEntry, Quality, QueueTask } from '../types'
 
 const prospects = ref<Prospect[]>([])
 const newUrl = ref('')
@@ -157,6 +171,40 @@ const editQuality = ref<Quality>('best')
 const editInterval = ref(60)
 const editingLinkId = ref<string | null>(null)
 const editLinkUrl = ref('')
+const queueTasks = ref<QueueTask[]>([])
+
+/** Aggregate queue tasks per prospect for progress bars. */
+const prospectProgress = computed(() => {
+  const map = new Map<string, { total: number; done: number; active: number; failed: number }>()
+  for (const t of queueTasks.value) {
+    if (!t.prospectId) continue
+    let p = map.get(t.prospectId)
+    if (!p) { p = { total: 0, done: 0, active: 0, failed: 0 }; map.set(t.prospectId, p) }
+    p.total++
+    if (t.status === 'done') p.done++
+    else if (t.status === 'failed') p.failed++
+    else if (t.status === 'running' || t.status === 'queued') p.active++
+  }
+  return map
+})
+
+function progressFor(prospectId: string) {
+  return prospectProgress.value.get(prospectId)
+}
+
+/** Human-readable "next check in X" based on lastCheck + interval. */
+function nextCheckIn(p: Prospect): string {
+  if (p.status === 'paused') return 'paused'
+  if (!p.lastCheck) return 'due soon'
+  const next = new Date(p.lastCheck).getTime() + (p.intervalMinutes || 60) * 60 * 1000
+  const ms = next - Date.now()
+  if (ms <= 0) return 'due now'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `in ${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `in ${hrs}h ${mins % 60}m`
+  return `in ${Math.floor(hrs / 24)}d`
+}
 
 const stats = computed(() => ({
   watching: prospects.value.filter((p) => p.status === 'ok').length,
@@ -238,6 +286,8 @@ async function checkOne(id: string) {
       checkMsg.value = r.error
         ? `${r.prospectName}: ${r.error}`
         : `${r.prospectName}: ${r.newItems} new, ${r.queued} queued ✓`
+    } else {
+      checkMsg.value = 'A check is already running — try again in a moment'
     }
     await load()
     await loadRecent()
@@ -330,15 +380,30 @@ function onCheckDone(_e: Event, results: CheckResult[]) {
   load()
 }
 
+let offQueueUpdate: (() => void) | null = null
+
 onMounted(() => {
   load()
   loadRecent()
+  loadQueue()
   window.dpApi.onProspectsCheckDone(onCheckDone)
+  offQueueUpdate = window.dpApi.onQueueUpdate(onQueueUpdate)
 })
 
 onUnmounted(() => {
   window.dpApi.offProspectsCheckDone(onCheckDone)
+  offQueueUpdate?.()
 })
+
+async function loadQueue() {
+  try {
+    queueTasks.value = await window.dpApi.queueList()
+  } catch { /* ignore */ }
+}
+
+function onQueueUpdate(tasks: QueueTask[]) {
+  queueTasks.value = tasks
+}
 </script>
 
 <style scoped>
@@ -407,5 +472,17 @@ onUnmounted(() => {
 .stat-num {
   font-size: 22px;
   font-weight: bold;
+}
+.progress-track {
+  height: 6px;
+  background: #1f2937;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 3px;
+  transition: width 0.3s ease;
 }
 </style>
