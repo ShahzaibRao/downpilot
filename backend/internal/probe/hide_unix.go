@@ -4,5 +4,5 @@ package probe
 
 import "os/exec"
 
-// hideWindow 在 Linux 上是空操作（进程本就没有控制台窗口）
+// hideWindow is a no-op on Linux (processes have no console window there)
 func hideWindow(_ *exec.Cmd) {}
