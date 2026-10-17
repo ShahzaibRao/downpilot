@@ -345,7 +345,7 @@ export class ProspectScheduler {
           if (seen.has(p.id, item.id)) continue
           newCount++
           // queue the download; mark seen when it completes (via onFinished)
-          queue.add(item.url, 'best', { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
+          queue.add(item.url, p.quality, { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
             outDir,
             prospectId: p.id,
             prospectItemId: item.id
