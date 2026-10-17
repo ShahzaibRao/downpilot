@@ -35,6 +35,12 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]['id']
 const active = ref<TabId>('quick')
+
+// lets views request a tab switch (e.g. Quick → Settings)
+window.addEventListener('dp:goto', (e: Event) => {
+  const id = (e as CustomEvent).detail as TabId
+  if (tabs.some((t) => t.id === id)) active.value = id
+})
 </script>
 
 <style>
