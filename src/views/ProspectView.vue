@@ -25,7 +25,14 @@
       <h3>Add prospect</h3>
       <div class="row">
         <input v-model="newUrl" class="url-input" placeholder="Profile URL (e.g. https://www.tiktok.com/@someone)" />
-        <input v-model="newName" class="url-input" style="max-width: 200px;" placeholder="Name (optional)" />
+        <input v-model="newName" class="url-input" style="max-width: 180px;" placeholder="Name (optional)" />
+        <select v-model="newQuality" class="url-input" style="max-width: 130px; flex: none;">
+          <option value="best">Best</option>
+          <option value="4k">4K</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="480p">480p</option>
+        </select>
         <button class="btn" :disabled="adding || !newUrl.trim()" @click="addProspect">
           {{ adding ? 'Adding…' : 'Add' }}
         </button>
@@ -38,12 +45,20 @@
     <div v-for="p in prospects" :key="p.id" class="card">
       <div class="row" style="align-items: center;">
         <template v-if="editingId === p.id">
-          <input v-model="editName" class="url-input" style="max-width: 220px;" />
-          <button class="btn small" @click="saveName(p.id)">Save</button>
+          <input v-model="editName" class="url-input" style="max-width: 200px;" />
+          <select v-model="editQuality" class="url-input" style="max-width: 120px; flex: none;">
+            <option value="best">Best</option>
+            <option value="4k">4K</option>
+            <option value="1080p">1080p</option>
+            <option value="720p">720p</option>
+            <option value="480p">480p</option>
+          </select>
+          <button class="btn small" @click="saveEdit(p.id)">Save</button>
           <button class="btn secondary small" @click="cancelEdit()">Cancel</button>
         </template>
         <template v-else>
           <strong style="font-size: 15px;">{{ p.name }}</strong>
+          <span class="badge">{{ p.quality }}</span>
         </template>
         <span v-if="p.status === 'ok'" class="badge ok">watching</span>
         <span v-else-if="p.status === 'paused'" class="badge">paused</span>
@@ -104,11 +119,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import type { Prospect, CheckResult, HistoryEntry } from '../types'
+import type { Prospect, CheckResult, HistoryEntry, Quality } from '../types'
 
 const prospects = ref<Prospect[]>([])
 const newUrl = ref('')
 const newName = ref('')
+const newQuality = ref<Quality>('best')
 const adding = ref(false)
 const addMsg = ref('')
 const linkInputs = ref<Record<string, string>>({})
@@ -117,6 +133,7 @@ const checkMsg = ref('')
 const checkingOne = ref<string | null>(null)
 const editingId = ref<string | null>(null)
 const editName = ref('')
+const editQuality = ref<Quality>('best')
 const editingLinkId = ref<string | null>(null)
 const editLinkUrl = ref('')
 
@@ -146,7 +163,7 @@ async function addProspect() {
   adding.value = true
   addMsg.value = ''
   try {
-    await window.dpApi.prospectsAdd(newUrl.value.trim(), newName.value.trim() || undefined)
+    await window.dpApi.prospectsAdd(newUrl.value.trim(), newName.value.trim() || undefined, newQuality.value)
     newUrl.value = ''
     newName.value = ''
     addMsg.value = 'Prospect added ✓'
@@ -213,6 +230,7 @@ async function checkOne(id: string) {
 function startEdit(p: Prospect) {
   editingId.value = p.id
   editName.value = p.name
+  editQuality.value = p.quality
   editingLinkId.value = null
 }
 
@@ -221,9 +239,12 @@ function cancelEdit() {
   editingLinkId.value = null
 }
 
-async function saveName(id: string) {
+async function saveEdit(id: string) {
   try {
-    await window.dpApi.prospectsRename(id, editName.value)
+    if (editName.value.trim()) {
+      await window.dpApi.prospectsRename(id, editName.value)
+    }
+    await window.dpApi.prospectsSetQuality(id, editQuality.value)
     editingId.value = null
     await load()
   } catch (e) {
