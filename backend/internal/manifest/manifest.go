@@ -24,6 +24,12 @@ import (
 // 这样「检测认为可用」与「实际能下载」是同一个标准。
 func MinYtDlpVersion() string { return YtDlpTag }
 
+// MinGalleryDlVersion gallery-dl 同样是日期版本号的 nightly，取清单 pin 的 tag 为门槛
+func MinGalleryDlVersion() string { return GalleryDlTag }
+
+// MinDenoVersion deno 是语义版本（v2.9.7）；CompareVersions 按数字段比较，"v" 前缀无影响
+func MinDenoVersion() string { return DenoTag }
+
 // Platforms 支持的平台组合，供 CI 交叉构建与校验使用
 var Platforms = []string{"darwin/arm64", "darwin/x64", "linux/x64", "linux/arm64", "win32/x64"}
 
@@ -74,6 +80,19 @@ func nodeArch(goarch string) string {
 	}
 }
 
+// targetName 目标平台下的可执行文件名。
+//
+// 不能用 rt.BinaryName：它读的是 sidecar 自身的 GOOS，而 TasksFor 是为目标平台
+// 生成任务的。在 Linux 上为 win32/x64 生成任务时，BinaryName 会漏掉 .exe，
+// 导致 Windows 用户拿到没有后缀的可执行文件——与当年 win32/x64 命名 bug 同一类问题。
+func targetName(platform string, kind rt.Kind) string {
+	name := string(kind)
+	if len(platform) >= 5 && platform[:5] == "win32" {
+		name += ".exe"
+	}
+	return name
+}
+
 // Tasks 生成当前平台的下载任务；only 为空表示全部依赖。
 func Tasks(managedDir string, only []string) ([]fetch.Task, error) {
 	return TasksFor(CurrentPlatform(), managedDir, only)
@@ -102,7 +121,7 @@ func TasksFor(platform, managedDir string, only []string) ([]fetch.Task, error) 
 			Tool:   string(rt.KindYtDlp),
 			URL:    ytdlpBase + "/" + a.Name,
 			SHA256: a.SHA256,
-			Target: filepath.Join(managedDir, rt.BinaryName(rt.KindYtDlp)),
+			Target: filepath.Join(managedDir, targetName(platform, rt.KindYtDlp)),
 		})
 	}
 
@@ -124,7 +143,38 @@ func TasksFor(platform, managedDir string, only []string) ([]fetch.Task, error) 
 			URL:    ffmpegBase + "/" + a.Name + ".gz",
 			SHA256: a.SHA256,
 			Gzip:   true,
-			Target: filepath.Join(managedDir, rt.BinaryName(kind)),
+			Target: filepath.Join(managedDir, targetName(platform, kind)),
+		})
+	}
+
+	if need(string(rt.KindGalleryDl)) {
+		if a, ok := gallerydlAssets[platform]; ok {
+			tasks = append(tasks, fetch.Task{
+				Tool:   string(rt.KindGalleryDl),
+				URL:    gallerydlBase + "/" + a.Name,
+				SHA256: a.SHA256,
+				Target: filepath.Join(managedDir, targetName(platform, rt.KindGalleryDl)),
+			})
+		}
+		// linux/arm64 等上游无构建的平台：跳过而非报错（yt-dlp 回退仍可用）
+	}
+
+	if need(string(rt.KindDeno)) {
+		a, ok := denoAssets[platform]
+		if !ok {
+			return nil, fmt.Errorf("暂不支持 %s 平台的 deno 下载", platform)
+		}
+		inner := "deno"
+		if platform == "win32/x64" {
+			inner = "deno.exe"
+		}
+		tasks = append(tasks, fetch.Task{
+			Tool:     string(rt.KindDeno),
+			URL:      denoBase + "/" + a.Name,
+			SHA256:   a.SHA256,
+			Zip:      true,
+			ZipInner: inner,
+			Target:   filepath.Join(managedDir, targetName(platform, rt.KindDeno)),
 		})
 	}
 
