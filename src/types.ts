@@ -26,11 +26,37 @@ export interface DepsProgressEvent {
   message?: string
 }
 
+export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
+
+export type DlStatus = 'downloading' | 'merging' | 'done' | 'error'
+
+export interface DownloadProgress {
+  id: string
+  status: DlStatus
+  percent: number
+  downloaded: number
+  total: number | null
+  speed: string
+  eta: string
+  filename: string
+  error?: string
+}
+
+export interface Settings {
+  downloadDir: string
+}
+
 /** window.dpApi — exposed by electron/preload/index.ts */
 export interface DpApi {
   getDepsStatus(): Promise<DepsStatus>
   fetchDeps(only?: string[]): Promise<boolean>
   onDepsProgress(cb: (evt: DepsProgressEvent) => void): () => void
+  startDownload(opts: { url: string; quality: Quality }): Promise<string>
+  cancelDownload(id: string): Promise<boolean>
+  onDownloadProgress(cb: (evt: DownloadProgress) => void): () => void
+  getSettings(): Promise<Settings>
+  setSettings(patch: Partial<Settings>): Promise<Settings>
+  pickDownloadDir(): Promise<string | null>
 }
 
 declare global {
