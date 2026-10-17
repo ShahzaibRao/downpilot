@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// 保底扫描：已知目录都没命中时，能在常见的"用户自己放东西"的位置找到。
+// Fallback scan: when no known dir hits, find it in common "places where users put things".
 //
-// 用临时目录构造真实层级来验证，而不是断言候选列表字符串。
+// Verify with a real directory layout in a temp dir, not by asserting candidate-list strings.
 func TestScanFindsBinaryInNestedDir(t *testing.T) {
 	root := t.TempDir()
-	// 仿造 `~/Downloads/ffmpeg-8.1/bin/ffmpeg`
+	// fake `~/Downloads/ffmpeg-8.1/bin/ffmpeg`
 	bin := filepath.Join(root, "Downloads", "ffmpeg-8.1", "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
@@ -25,10 +25,10 @@ func TestScanFindsBinaryInNestedDir(t *testing.T) {
 	resetScanBudget()
 	got := scanDir(filepath.Join(root, "Downloads"), BinaryName(KindFFmpeg), 0)
 	if got == "" {
-		t.Fatal("未在嵌套目录中找到 ffmpeg（保底扫描失效）")
+		t.Fatal("ffmpeg not found in nested dirs (fallback scan broken)")
 	}
 	if filepath.Base(got) != BinaryName(KindFFmpeg) {
-		t.Errorf("找到的文件名不对：%s", got)
+		t.Errorf("wrong file name found: %s", got)
 	}
 }
 
@@ -50,11 +50,11 @@ func TestScanContinuesAfterRejectedCopy(t *testing.T) {
 	resetScanBudget()
 	got := scanDirMatching(root, name, 0, func(file string) bool { return file == valid })
 	if got != valid {
-		t.Fatalf("拒绝第一个副本后未继续扫描：%q，期望 %q", got, valid)
+		t.Fatalf("did not keep scanning after rejecting the first copy: %q, expected %q", got, valid)
 	}
 }
 
-// 深度限制必须生效：过深的目录不该被遍历
+// depth limit must hold: overly deep dirs must not be walked
 func TestScanRespectsMaxDepth(t *testing.T) {
 	root := t.TempDir()
 	deep := root
@@ -70,14 +70,14 @@ func TestScanRespectsMaxDepth(t *testing.T) {
 
 	resetScanBudget()
 	if got := scanDir(root, BinaryName(KindYtDlp), 0); got != "" {
-		t.Errorf("超过深度上限仍被找到：%s（深度限制失效，Windows 上会变慢）", got)
+		t.Errorf("found past the depth limit: %s (depth limit broken — slow on Windows)", got)
 	}
 }
 
-// 预算用尽时必须停下，不能无限遍历
+// must stop when the budget is spent — no unbounded walking
 func TestScanRespectsBudget(t *testing.T) {
 	root := t.TempDir()
-	// 造一条比预算更深的目录链
+	// build a dir chain deeper than the budget
 	deep := root
 	for i := 0; i < 20; i++ {
 		deep = filepath.Join(deep, "d")
@@ -85,7 +85,7 @@ func TestScanRespectsBudget(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// 把目标放在第 10 层（超出 3 个目录的预算，但没超出深度上限）
+	// put the target at level 10 (past a 3-dir budget, but within the depth limit)
 	targetDir := root
 	for i := 0; i < 3; i++ {
 		targetDir = filepath.Join(targetDir, "d")
@@ -94,25 +94,25 @@ func TestScanRespectsBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	setScanBudgetForTest(2) // 预算不足以到达第 3 层
+	setScanBudgetForTest(2) // budget too small to reach level 3
 	if got := scanDir(root, BinaryName(KindYtDlp), 0); got != "" {
-		t.Errorf("预算耗尽后仍找到了文件：%s", got)
+		t.Errorf("file found after budget exhaustion: %s", got)
 	}
 }
 
-// 关键：预算按**目录数**计，而不是条目数。
+// Key: the budget counts **dirs**, not entries.
 //
-// 回归背景：早先按条目计（20000 条），Windows 上扫 C:\Program Files 时
-// 一个大目录就吃光预算，保底扫描形同虚设。CI 的 windows job 暴露了它。
+// Regression background: it used to count entries (20000), and scanning C:\Program Files on Windows
+// let one big dir eat the whole budget, making the fallback scan useless. CI's windows job exposed it.
 func TestBudgetCountsDirsNotEntries(t *testing.T) {
 	root := t.TempDir()
-	// 一个目录里塞很多文件（模拟 Program Files 这类大目录）
+	// stuff one dir with many files (simulating big dirs like Program Files)
 	for i := 0; i < 5000; i++ {
 		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("f%d.txt", i)), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// 目标在下一层
+	// target is one level down
 	sub := filepath.Join(root, "bin")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
@@ -121,38 +121,38 @@ func TestBudgetCountsDirsNotEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 只够进 10 个目录，但大目录里的 5000 个文件不该消耗它
+	// budget allows entering 10 dirs, but the 5000 files in the big dir must not consume it
 	setScanBudgetForTest(10)
 	if got := scanDir(root, BinaryName(KindFFmpeg), 0); got == "" {
-		t.Error("大目录里的文件数不应消耗预算（否则 Windows 上扫不到）")
+		t.Error("file count in a big dir must not consume the budget (or Windows scans fail)")
 	}
 }
 
-// 无关目录要被跳过（否则会白扫 node_modules 这类超大目录）
+// irrelevant dirs must be skipped (or we'd wastefully scan huge dirs like node_modules)
 func TestShouldSkipDir(t *testing.T) {
 	skip := []string{"node_modules", ".git", "Cache", "Windows", "System32", "AppData", "tmp"}
 	for _, d := range skip {
 		if !shouldSkipDir(d) {
-			t.Errorf("%q 应被跳过", d)
+			t.Errorf("%q should be skipped", d)
 		}
 	}
 	keep := []string{"Downloads", "ffmpeg-8.1", "bin", "yt-dlp"}
 	for _, d := range keep {
 		if shouldSkipDir(d) {
-			t.Errorf("%q 不应被跳过", d)
+			t.Errorf("%q should not be skipped", d)
 		}
 	}
 }
 
-// 每个依赖独立计算预算，避免前一个把预算耗尽导致后一个扫不到。
+// each dependency gets its own budget, so one can't drain the next into a miss.
 //
-// 断言"重置后的值等于上限"而不是"剩余 > 1"：后者会依赖扫描是否真的发生
-// （macOS 上候选目录命中会提前 return，Windows 上不会），于是同一份代码
-// 在两个平台上表现不同——这正是第一版用例的问题。
+// Assert "the reset value equals the cap", not "remaining > 1": the latter depends on whether
+// a scan actually happened (macOS returns early on a candidate-dir hit, Windows doesn't), making
+// the same code behave differently per platform — exactly the first version's bug.
 func TestFindOneResetsScanBudget(t *testing.T) {
 	scanDirsLeft = 1
 	_ = FindOne(KindFFprobe, Options{ManagedDir: t.TempDir()})
 	if scanDirsLeft == 1 {
-		t.Errorf("FindOne 未重置扫描预算，实际剩余 %d", scanDirsLeft)
+		t.Errorf("FindOne did not reset the scan budget, %d left", scanDirsLeft)
 	}
 }
