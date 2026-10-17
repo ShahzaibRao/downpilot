@@ -1,7 +1,16 @@
 <template>
   <div class="view">
-    <h2>Prospects</h2>
-    <p class="muted">Creators to auto-watch. New content is downloaded automatically every 60 minutes.</p>
+    <div class="row" style="align-items: center;">
+      <div>
+        <h2 style="margin: 0;">Prospects</h2>
+        <p class="muted" style="margin: 4px 0;">Creators to auto-watch. New content is downloaded automatically every 60 minutes.</p>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn secondary" :disabled="checking" @click="checkNow">
+        {{ checking ? 'Checking…' : 'Check now' }}
+      </button>
+    </div>
+    <div v-if="checkMsg" class="muted" style="font-size: 13px; margin-bottom: 8px;">{{ checkMsg }}</div>
 
     <!-- add -->
     <div class="card">
@@ -53,8 +62,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import type { Prospect } from '../types'
+import { ref, onMounted, onUnmounted } from 'vue'
+import type { Prospect, CheckResult } from '../types'
 
 const prospects = ref<Prospect[]>([])
 const newUrl = ref('')
@@ -62,6 +71,8 @@ const newName = ref('')
 const adding = ref(false)
 const addMsg = ref('')
 const linkInputs = ref<Record<string, string>>({})
+const checking = ref(false)
+const checkMsg = ref('')
 
 async function load() {
   try {
@@ -127,7 +138,40 @@ function formatTime(iso: string): string {
   }
 }
 
-onMounted(load)
+async function checkNow() {
+  checking.value = true
+  checkMsg.value = ''
+  try {
+    const results: CheckResult[] = await window.dpApi.prospectsCheckNow()
+    const totalNew = results.reduce((n, r) => n + r.newItems, 0)
+    const totalQueued = results.reduce((n, r) => n + r.queued, 0)
+    const errors = results.filter((r) => r.error)
+    checkMsg.value = `Checked ${results.length} prospect(s): ${totalNew} new, ${totalQueued} queued` +
+      (errors.length ? ` — ${errors.length} error(s): ${errors.map((e) => e.prospectName).join(', ')}` : ' ✓')
+    await load()
+  } catch (e) {
+    checkMsg.value = `Check failed: ${(e as Error).message}`
+  } finally {
+    checking.value = false
+  }
+}
+
+function onCheckDone(_e: Event, results: CheckResult[]) {
+  const totalNew = results.reduce((n, r) => n + r.newItems, 0)
+  if (totalNew > 0) {
+    checkMsg.value = `Auto-check: ${totalNew} new item(s) queued ✓`
+  }
+  load()
+}
+
+onMounted(() => {
+  load()
+  window.dpApi.onProspectsCheckDone(onCheckDone)
+})
+
+onUnmounted(() => {
+  window.dpApi.offProspectsCheckDone(onCheckDone)
+})
 </script>
 
 <style scoped>
