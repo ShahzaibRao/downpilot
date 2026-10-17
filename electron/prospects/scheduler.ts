@@ -291,25 +291,33 @@ export class ProspectScheduler {
       const prospects = store.list().filter((p) => p.status === 'ok')
       log(`checkAll: ${prospects.length} prospect(s) to check`)
       for (const p of prospects) {
-        log(`checking "${p.name}" (${p.links.length} link(s))`)
-        try {
-          const r = await this.checkProspect(p)
-          log(`"${p.name}": ${r.newItems} new, ${r.queued} queued${r.error ? ` (warnings: ${r.error})` : ''}`)
-          results.push(r)
-          // OK if at least one link worked; per-link warnings preserved
-          store.recordCheck(p.id, true, undefined, r.error)
-        } catch (e) {
-          const msg = cleanError((e as Error).message)
-          log(`"${p.name}" FAILED: ${msg}`)
-          results.push({ prospectId: p.id, prospectName: p.name, newItems: 0, queued: 0, error: msg })
-          store.recordCheck(p.id, false, msg)
-        }
+        const r = await this.checkOne(p.id)
+        if (r) results.push(r)
       }
     } finally {
       this.running = false
     }
     this.deps.onCheckDone?.(results)
     return results
+  }
+
+  /** Check a single prospect (per-prospect "Check" button). */
+  async checkOne(prospectId: string): Promise<CheckResult | null> {
+    const store = this.deps.getStore()
+    const p = store.get(prospectId)
+    if (!p) return null
+    log(`checking "${p.name}" (${p.links.length} link(s))`)
+    try {
+      const r = await this.checkProspect(p)
+      log(`"${p.name}": ${r.newItems} new, ${r.queued} queued${r.error ? ` (warnings: ${r.error})` : ''}`)
+      store.recordCheck(p.id, true, undefined, r.error)
+      return r
+    } catch (e) {
+      const msg = cleanError((e as Error).message)
+      log(`"${p.name}" FAILED: ${msg}`)
+      store.recordCheck(p.id, false, msg)
+      return { prospectId: p.id, prospectName: p.name, newItems: 0, queued: 0, error: msg }
+    }
   }
 
   private async checkProspect(p: Prospect): Promise<CheckResult> {
