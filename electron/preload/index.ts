@@ -67,6 +67,11 @@ contextBridge.exposeInMainWorld('dpApi', {
   proxyTest: () => ipcRenderer.invoke('proxy:test'),
   proxyTestSite: (siteUrl: string) => ipcRenderer.invoke('proxy:testSite', siteUrl),
 
+  // ---- POT server (Phase 2b status panel) ----
+  potStatus: () => ipcRenderer.invoke('pot:status'),
+  potStart: () => ipcRenderer.invoke('pot:start'),
+  potStop: () => ipcRenderer.invoke('pot:stop'),
+
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
     const handler = (_event: unknown, metas: Record<string, unknown>[]) => cb(metas)
