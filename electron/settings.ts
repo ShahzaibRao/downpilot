@@ -2,7 +2,13 @@ import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 
-export interface ProxyConfig {
+export type ProxyProtocol = 'http' | 'https' | 'socks4' | 'socks5'
+
+export interface ProxyEntry {
+  id: string
+  /** User label, e.g. "Squid AWS". */
+  name: string
+  protocol: ProxyProtocol
   host: string
   port: number
   username: string
@@ -11,7 +17,10 @@ export interface ProxyConfig {
 
 export interface SmartModeConfig {
   enabled: boolean
-  proxy: ProxyConfig
+  /** All saved proxies. */
+  proxies: ProxyEntry[]
+  /** ID of the active proxy (null = none selected). */
+  activeProxyId: string | null
   /** Platforms that use the proxy: subset of SMART_PLATFORMS, or ['all']. */
   platforms: string[]
 }
@@ -27,7 +36,8 @@ const defaults = (): Settings => ({
   maxConcurrent: 1,
   smartMode: {
     enabled: false,
-    proxy: { host: '', port: 8080, username: '', password: '' },
+    proxies: [],
+    activeProxyId: null,
     platforms: ['all']
   }
 })
@@ -44,7 +54,32 @@ export function getSettings(): Settings {
     parsed.maxConcurrent = Math.min(8, Math.max(1, Math.floor(parsed.maxConcurrent) || 1))
     // backfill smartMode for settings saved before Phase 2c
     if (!parsed.smartMode) parsed.smartMode = defaults().smartMode
-    if (!parsed.smartMode.proxy) parsed.smartMode.proxy = defaults().smartMode.proxy
+    // migrate old single-proxy shape → proxies list
+    const sm = parsed.smartMode as unknown as Record<string, unknown>
+    if (sm && typeof sm === 'object' && 'proxy' in sm && !('proxies' in sm)) {
+      const old = sm.proxy as { host?: string; port?: number; username?: string; password?: string }
+      if (old?.host) {
+        parsed.smartMode = {
+          enabled: !!sm.enabled,
+          proxies: [{
+            id: 'proxy-' + Date.now().toString(36),
+            name: 'My proxy',
+            protocol: 'http',
+            host: old.host ?? '',
+            port: old.port ?? 8080,
+            username: old.username ?? '',
+            password: old.password ?? ''
+          }],
+          activeProxyId: null,
+          platforms: Array.isArray(sm.platforms) ? (sm.platforms as string[]) : ['all']
+        }
+        const p = parsed.smartMode.proxies[0]
+        parsed.smartMode.activeProxyId = p.id
+      } else {
+        parsed.smartMode = defaults().smartMode
+      }
+    }
+    if (!Array.isArray(parsed.smartMode.proxies)) parsed.smartMode.proxies = []
     if (!Array.isArray(parsed.smartMode.platforms)) parsed.smartMode.platforms = ['all']
     return parsed
   } catch {
