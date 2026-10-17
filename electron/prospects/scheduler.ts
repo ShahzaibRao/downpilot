@@ -109,7 +109,6 @@ export async function listItemsGalleryDl(
     '--dump-json',
     '--no-download',
     '--range', `1-${limit}`,
-    '--no-check-certificates',
     url
   ]
   if (cookiesFile) args.push('--cookies', cookiesFile)
