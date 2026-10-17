@@ -3,8 +3,8 @@ import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { randomUUID } from 'node:crypto'
-import { DownloadJob, type Quality } from '../download/engine'
+import { type Quality, type Tools } from '../download/engine'
+import { QueueManager } from '../download/queue'
 import { getSettings, setSettings } from '../settings'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -126,7 +126,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// ---- IPC: downloads (P1a — yt-dlp single downloads) ----
+// ---- IPC: downloads — queue (Phase 1c) ----
 
 interface ToolPaths {
   ytdlp?: string
@@ -159,38 +159,56 @@ async function toolPaths(): Promise<ToolPaths> {
   return toolPathsCache
 }
 
-const jobs = new Map<string, DownloadJob>()
+let queue: QueueManager | null = null
 
-/** Start a download. Returns the job id; progress streams as 'dl:progress'. */
-ipcMain.handle('dl:start', async (event, opts: { url: string; quality: Quality }) => {
-  const url = opts.url.trim()
-  if (!/^https?:\/\//i.test(url)) throw new Error('Please paste a valid http(s) link')
+function getQueue(): QueueManager {
+  if (!queue) {
+    queue = new QueueManager(
+      path.join(app.getPath('userData'), 'queue.json'),
+      () => toolPaths(),
+      () => getSettings().downloadDir,
+      (tasks) => {
+        if (mainWindow) mainWindow.webContents.send('queue:update', tasks)
+      }
+    )
+    // settings is the source of truth for concurrency
+    queue.setMaxConcurrent(getSettings().maxConcurrent)
+  }
+  return queue
+}
+
+async function requireEngines(): Promise<void> {
   const tools = await toolPaths()
   if (!tools.ytdlp && !tools.gallerydl) {
     throw new Error('No download engine installed — get yt-dlp or gallery-dl from Settings first')
   }
-  const settings = getSettings()
-  const id = randomUUID()
-  const job = new DownloadJob(
-    id,
-    url,
-    settings.downloadDir,
-    opts.quality,
-    tools,
-    (e) => {
-      event.sender.send('dl:progress', e)
-      if (e.status === 'done' || e.status === 'error') jobs.delete(id)
-    }
-  )
-  jobs.set(id, job)
-  job.start()
-  return id
-})
+}
 
-/** Cancel a running download. */
-ipcMain.handle('dl:cancel', async (_event, id: string) => {
-  jobs.get(id)?.cancel()
-  jobs.delete(id)
+ipcMain.handle('queue:list', async () => getQueue().list())
+ipcMain.handle('queue:add', async (_event, opts: { url: string; quality: Quality }) => {
+  const url = opts.url.trim()
+  if (!/^https?:\/\//i.test(url)) throw new Error('Please paste a valid http(s) link')
+  await requireEngines()
+  return getQueue().add(url, opts.quality)
+})
+ipcMain.handle('queue:pause', async (_event, id: string) => {
+  getQueue().pause(id)
+  return true
+})
+ipcMain.handle('queue:resume', async (_event, id: string) => {
+  getQueue().resume(id)
+  return true
+})
+ipcMain.handle('queue:retry', async (_event, id: string) => {
+  getQueue().retry(id)
+  return true
+})
+ipcMain.handle('queue:cancel', async (_event, id: string) => {
+  getQueue().cancel(id)
+  return true
+})
+ipcMain.handle('queue:clearDone', async () => {
+  getQueue().clearDone()
   return true
 })
 
@@ -198,9 +216,11 @@ ipcMain.handle('dl:cancel', async (_event, id: string) => {
 
 ipcMain.handle('settings:get', async () => getSettings())
 
-ipcMain.handle('settings:set', async (_event, patch: { downloadDir?: string }) => {
-  toolPathsCache = null // download dir change doesn't affect tools, kept simple
-  return setSettings(patch)
+ipcMain.handle('settings:set', async (_event, patch: { downloadDir?: string; maxConcurrent?: number }) => {
+  const next = setSettings(patch)
+  // keep the queue's concurrency in sync with settings
+  getQueue().setMaxConcurrent(next.maxConcurrent)
+  return next
 })
 
 /** Let the user pick the download folder. Returns the path or null. */
