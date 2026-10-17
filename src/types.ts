@@ -141,6 +141,14 @@ export interface Prospect {
   createdAt: string
 }
 
+export interface CheckResult {
+  prospectId: string
+  prospectName: string
+  newItems: number
+  queued: number
+  error?: string
+}
+
 export interface PotStatus {
   denoPath: string | null
   filesReady: boolean
@@ -194,6 +202,9 @@ export interface DpApi {
   prospectsRename(id: string, name: string): Promise<Prospect>
   prospectsSetStatus(id: string, status: string): Promise<boolean>
   prospectsUnpause(id: string): Promise<boolean>
+  prospectsCheckNow(): Promise<CheckResult[]>
+  onProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
+  offProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
