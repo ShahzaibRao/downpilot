@@ -99,6 +99,8 @@ export interface DownloadOptions {
   scopeOpts: ScopeOpts
   /** Resolved playlist indices for order='popular' (two-pass). */
   playlistItems?: number[]
+  /** Netscape-format cookies file (per-platform profile), if any. */
+  cookiesFile?: string
 }
 
 export type DlStatus = 'downloading' | 'merging' | 'done' | 'error'
@@ -157,6 +159,7 @@ export class YtDlpJob {
       '-o',
       outTemplate,
       ...this.scopeArgs(),
+      ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
       this.opts.url
     ]
 
@@ -273,6 +276,8 @@ export interface GalleryDlOptions {
   gallerydlPath: string
   /** Bound on files per job (safety for profile/album URLs). */
   maxItems: number
+  /** Netscape-format cookies file (per-platform profile), if any. */
+  cookiesFile?: string
 }
 
 /**
@@ -298,6 +303,7 @@ export class GalleryDlJob {
       this.opts.outDir,
       '--range',
       `1-${Math.max(1, this.opts.maxItems)}`,
+      ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
       this.opts.url
     ]
     this.proc = spawn(this.opts.gallerydlPath, args, {
@@ -373,11 +379,19 @@ export class GalleryDlJob {
 // ---------------------------------------------------------------------------
 
 import { routeUrl, engineLabel, type Engine } from './router'
+import { platformForUrl, isLoginWallError } from '../cookies'
 
 export interface Tools {
   ytdlp?: string
   ffmpegDir?: string
   gallerydl?: string
+}
+
+export interface CookieHooks {
+  /** Decrypt + write the platform's cookies file; null when no profile. */
+  getCookiesFile: (platform: string) => string | null
+  /** Mark the platform's profile expired (login wall hit despite cookies). */
+  markExpired: (platform: string) => void
 }
 
 function blankEvent(id: string): ProgressEvent {
@@ -452,7 +466,8 @@ export class DownloadJob {
     private quality: Quality,
     private tools: Tools,
     private onEvent: (e: ProgressEvent) => void,
-    private scopeOpts: ScopeOpts = defaultScopeOpts()
+    private scopeOpts: ScopeOpts = defaultScopeOpts(),
+    private cookies: CookieHooks | null = null
   ) {}
 
   start(): void {
@@ -477,9 +492,25 @@ export class DownloadJob {
     // Announce which engine is trying (UI badge switches on fallback too).
     this.onEvent({ ...blankEvent(this.id), engine: label })
 
+    // Per-platform cookie profile, if the user added one.
+    const cookiePlatform = platformForUrl(this.url)
+    let cookiesFile: string | null = null
+    if (cookiePlatform && this.cookies) {
+      try {
+        cookiesFile = this.cookies.getCookiesFile(cookiePlatform)
+      } catch {
+        cookiesFile = null
+      }
+    }
+
     const sink = (e: ProgressEvent) => {
       if (e.status === 'error') {
-        this.errors.push(`${label}: ${e.error ?? 'unknown error'}`)
+        const msg = `${label}: ${e.error ?? 'unknown error'}`
+        // Login wall despite cookies → profile likely expired.
+        if (cookiesFile && cookiePlatform && this.cookies && isLoginWallError(e.error ?? '')) {
+          this.cookies.markExpired(cookiePlatform)
+        }
+        this.errors.push(msg)
         next()
       } else {
         this.onEvent({ ...e, engine: label })
@@ -517,7 +548,8 @@ export class DownloadJob {
           ytdlpPath: bin,
           ffmpegDir: this.tools.ffmpegDir,
           scopeOpts: this.scopeOpts,
-          playlistItems
+          playlistItems,
+          ...(cookiesFile ? { cookiesFile } : {})
         },
         sink
       )
@@ -526,7 +558,13 @@ export class DownloadJob {
     } else {
       const job = new GalleryDlJob(
         this.id,
-        { url: this.url, outDir: this.outDir, gallerydlPath: bin, maxItems: this.scopeOpts.maxItems },
+        {
+          url: this.url,
+          outDir: this.outDir,
+          gallerydlPath: bin,
+          maxItems: this.scopeOpts.maxItems,
+          ...(cookiesFile ? { cookiesFile } : {})
+        },
         sink
       )
       this.current = job
