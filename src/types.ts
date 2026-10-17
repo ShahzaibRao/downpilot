@@ -85,6 +85,8 @@ export interface HistoryEntry {
   error?: string
   downloaded: number
   completedAt: number
+  prospectId?: string
+  prospectName?: string
 }
 
 export interface CookieProfileMeta {
@@ -149,6 +151,16 @@ export interface CheckResult {
   error?: string
 }
 
+export interface AppNotification {
+  id: string
+  title: string
+  body: string
+  prospectId?: string
+  prospectName?: string
+  createdAt: number
+  read: boolean
+}
+
 export interface PotStatus {
   denoPath: string | null
   filesReady: boolean
@@ -205,6 +217,15 @@ export interface DpApi {
   prospectsCheckNow(): Promise<CheckResult[]>
   onProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
   offProspectsCheckDone(cb: (e: Event, results: CheckResult[]) => void): void
+  // notifications (Phase 3c)
+  notifyList(): Promise<AppNotification[]>
+  notifyMarkRead(id: string): Promise<boolean>
+  notifyMarkAllRead(): Promise<boolean>
+  notifyClear(): Promise<boolean>
+  onNotifyUpdate(cb: (e: any, items: AppNotification[]) => void): void
+  offNotifyUpdate(cb: (e: any, items: AppNotification[]) => void): void
+  // shell (Phase 3c)
+  shellOpenProspectFolder(prospectId: string): Promise<boolean>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
