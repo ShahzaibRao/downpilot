@@ -389,7 +389,7 @@ export class GalleryDlJob {
 
 import { routeUrl, engineLabel, type Engine } from './router'
 import { platformForUrl, isLoginWallError } from '../cookies'
-import { buildProxyUrl, shouldUseProxy } from '../smartmode'
+import { proxyUrlForDownload } from '../smartmode'
 import type { SmartModeConfig } from '../settings'
 
 export interface Tools {
@@ -519,10 +519,7 @@ export class DownloadJob {
     this.onEvent({ ...blankEvent(this.id), engine: label })
 
     // Smart Mode: proxy for checked platforms (bandwidth saving + block avoidance).
-    let proxyUrl: string | null = null
-    if (this.smartMode && shouldUseProxy(this.url, this.smartMode)) {
-      proxyUrl = buildProxyUrl(this.smartMode)
-    }
+    const proxyUrl = this.smartMode ? proxyUrlForDownload(this.url, this.smartMode) : null
 
     // Per-platform cookie profile, if the user added one.
     const cookiePlatform = platformForUrl(this.url)
