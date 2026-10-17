@@ -166,6 +166,7 @@ export interface DpApi {
   potStatus(): Promise<PotStatus>
   potStart(): Promise<boolean>
   potStop(): Promise<boolean>
+  potForceStop(): Promise<boolean>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
