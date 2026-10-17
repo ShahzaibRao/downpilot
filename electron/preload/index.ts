@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('dpApi', {
   prospectsRename: (id: string, name: string) => ipcRenderer.invoke('prospects:rename', id, name),
   prospectsSetStatus: (id: string, status: string) => ipcRenderer.invoke('prospects:setStatus', id, status),
   prospectsUnpause: (id: string) => ipcRenderer.invoke('prospects:unpause', id),
+  prospectsCheckNow: () => ipcRenderer.invoke('prospects:checkNow'),
+  onProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.on('prospects:checkDone', cb),
+  offProspectsCheckDone: (cb: (e: any, results: any[]) => void) => ipcRenderer.removeListener('prospects:checkDone', cb),
 
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
