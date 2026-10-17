@@ -12,21 +12,28 @@ export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
  * "paused but the video still arrived" bug.
  */
 function killTree(proc: ChildProcess | null): void {
-  if (!proc || !proc.pid) return
+  if (!proc || !proc.pid) {
+    console.log('[killTree] no process to kill (already gone)')
+    return
+  }
   const pid = proc.pid
+  console.log(`[killTree] killing process tree, pid=${pid}`)
   try {
     proc.kill()
   } catch {
     /* already dead */
   }
   if (process.platform === 'win32') {
-    // /T = the whole tree, /F = force. Best-effort: the pid may be gone already.
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
+    // /T = the whole tree, /F = force.
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (err) => {
+      console.log(`[killTree] taskkill ${err ? 'FAILED: ' + err.message : 'OK'} (pid=${pid})`)
+    })
   } else {
     try {
       process.kill(-pid, 'SIGKILL') // whole process group (needs detached: true at spawn)
+      console.log(`[killTree] process group SIGKILL sent (pid=${pid})`)
     } catch {
-      /* already dead */
+      console.log(`[killTree] process group already gone (pid=${pid})`)
     }
   }
 }
