@@ -6,25 +6,25 @@ import (
 )
 
 func TestScanExpiredZeroMeansUnlimited(t *testing.T) {
-	scanDeadline = time.Time{} // 零值
+	scanDeadline = time.Time{} // zero value
 	if scanExpired(time.Now()) {
-		t.Error("零值应视为无期限，否则扫描会静默不做任何事")
+		t.Error("zero value should mean no deadline, otherwise the scan silently does nothing")
 	}
 	scanDeadline = time.Now().Add(-time.Second)
 	if !scanExpired(time.Now()) {
-		t.Error("已过期的时限应判定为超时")
+		t.Error("an expired deadline should count as timed out")
 	}
 	scanDeadline = time.Now().Add(time.Hour)
 	if scanExpired(time.Now()) {
-		t.Error("未到期的时限不应判定为超时")
+		t.Error("a future deadline should not count as timed out")
 	}
 }
 
-// setScanBudgetForTest 只调整目录数预算，**同时把时限设为有效值**。
+// setScanBudgetForTest only adjusts the dir budget, **while also setting a valid deadline**.
 //
-// 这是被 CI 抓出来的教训：直接写 `scanDirsLeft = N` 而不碰时限时，
-// 用例会继承上一个用例留下的过期时限，于是扫描静默不做任何事
-// ——单跑通过、全量跑或 -shuffle 时随机失败（典型的状态泄漏）。
+// Lesson learned from CI: writing `scanDirsLeft = N` directly without touching the deadline
+// makes the case inherit the previous case's expired deadline, so the scan silently does nothing
+// — passes alone, randomly fails in full runs or with -shuffle (classic state leak).
 func setScanBudgetForTest(n int) {
 	scanDirsLeft = n
 	scanDeadline = time.Now().Add(scanTimeLimit)
