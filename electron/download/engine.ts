@@ -1,7 +1,35 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 
 export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
+
+/**
+ * Kill a job's whole process tree.
+ *
+ * A plain proc.kill() only stops the direct child. During the merge step
+ * yt-dlp runs ffmpeg as a child process — killing just yt-dlp leaves
+ * ffmpeg alive, which finishes the merge in the background. That's the
+ * "paused but the video still arrived" bug.
+ */
+function killTree(proc: ChildProcess | null): void {
+  if (!proc || !proc.pid) return
+  const pid = proc.pid
+  try {
+    proc.kill()
+  } catch {
+    /* already dead */
+  }
+  if (process.platform === 'win32') {
+    // /T = the whole tree, /F = force. Best-effort: the pid may be gone already.
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
+  } else {
+    try {
+      process.kill(-pid, 'SIGKILL') // whole process group (needs detached: true at spawn)
+    } catch {
+      /* already dead */
+    }
+  }
+}
 
 export interface DownloadOptions {
   url: string
@@ -73,6 +101,8 @@ export class YtDlpJob {
 
     this.proc = spawn(this.opts.ytdlpPath, args, {
       windowsHide: true,
+      // Own process group on POSIX so killTree() can take the whole tree (incl. ffmpeg).
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
@@ -105,7 +135,7 @@ export class YtDlpJob {
   }
 
   cancel(): void {
-    this.proc?.kill()
+    killTree(this.proc)
   }
 
   private handleLine(line: string): void {
@@ -185,6 +215,7 @@ export class GalleryDlJob {
     const args = ['-d', this.opts.outDir, this.opts.url]
     this.proc = spawn(this.opts.gallerydlPath, args, {
       windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
@@ -231,7 +262,7 @@ export class GalleryDlJob {
   }
 
   cancel(): void {
-    this.proc?.kill()
+    killTree(this.proc)
   }
 
   private emit(partial: Partial<ProgressEvent>): void {
