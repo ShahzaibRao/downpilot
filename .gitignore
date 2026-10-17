@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-electron/
+release/
+*.log
+
+# Go sidecar build
+backend/build/
+backend/bin/
+
+# Env & secrets (never commit)
+.env
+.env.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Managed runtime deps (downloaded by the sidecar at runtime)
+tools/
+deps/
