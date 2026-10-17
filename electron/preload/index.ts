@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('dpApi', {
   cookiesRemove: (platform: string) => ipcRenderer.invoke('cookies:remove', platform),
   cookiesTest: (opts: { platform: string; testUrl: string }) => ipcRenderer.invoke('cookies:test', opts),
 
+  // ---- Smart Mode proxy tests (Phase 2c) ----
+  proxyTest: () => ipcRenderer.invoke('proxy:test'),
+  proxyTestSite: (siteUrl: string) => ipcRenderer.invoke('proxy:testSite', siteUrl),
+
   /** Subscribe to cookie profile updates. Returns an unsubscribe function. */
   onCookiesUpdate: (cb: (metas: Record<string, unknown>[]) => void) => {
     const handler = (_event: unknown, metas: Record<string, unknown>[]) => cb(metas)
