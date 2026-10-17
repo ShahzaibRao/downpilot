@@ -29,14 +29,49 @@
         </label>
       </div>
       <div v-if="smartEnabled">
+        <!-- saved proxies -->
+        <div v-if="proxies.length > 0" class="preview" style="margin-bottom: 10px;">
+          <div v-for="p in proxies" :key="p.id" class="preview-row">
+            <strong>{{ p.name || 'Unnamed' }}</strong>
+            <span class="muted">{{ p.protocol }}://{{ p.host }}:{{ p.port }}</span>
+            <span v-if="p.id === activeProxyId" class="badge ok">active</span>
+            <span class="spacer"></span>
+            <button v-if="p.id !== activeProxyId" class="btn secondary small" @click="useProxy(p.id)">Use</button>
+            <button class="btn secondary small" @click="editProxy(p)">Edit</button>
+            <button class="btn secondary small" @click="deleteProxy(p.id)">Delete</button>
+          </div>
+        </div>
+        <div v-else class="muted" style="margin-bottom: 10px; font-size: 13px;">
+          No proxies saved yet — add one below.
+        </div>
+
+        <!-- add / edit form -->
         <div class="row" style="margin-bottom: 8px;">
-          <input v-model="proxyHost" class="url-input" placeholder="Proxy host (e.g. 1.2.3.4)" @change="saveSmart" />
-          <input v-model.number="proxyPort" type="number" min="1" max="65535" class="url-input" style="max-width: 110px;" placeholder="Port" @change="saveSmart" />
+          <input v-model="proxyName" class="url-input" placeholder="Name (e.g. Squid AWS)" />
+          <select v-model="proxyProtocol" class="quality">
+            <option value="http">http</option>
+            <option value="https">https</option>
+            <option value="socks4">socks4</option>
+            <option value="socks5">socks5</option>
+          </select>
         </div>
-        <div class="row" style="margin-bottom: 10px;">
-          <input v-model="proxyUser" class="url-input" placeholder="Username (optional)" @change="saveSmart" />
-          <input v-model="proxyPass" type="password" class="url-input" placeholder="Password (optional)" @change="saveSmart" />
+        <div class="row" style="margin-bottom: 8px;">
+          <input v-model="proxyHost" class="url-input" placeholder="Host (e.g. 1.2.3.4)" />
+          <input v-model.number="proxyPort" type="number" min="1" max="65535" class="url-input" style="max-width: 110px;" placeholder="Port" />
         </div>
+        <div class="row" style="margin-bottom: 8px;">
+          <input v-model="proxyUser" class="url-input" placeholder="Username (optional)" />
+          <input v-model="proxyPass" type="password" class="url-input" placeholder="Password (optional)" />
+        </div>
+        <div class="row" style="margin-bottom: 10px; align-items: center;">
+          <button class="btn" :disabled="!proxyHost.trim()" @click="saveProxy">
+            {{ editingProxyId ? 'Update proxy' : 'Save proxy' }}
+          </button>
+          <button v-if="editingProxyId" class="btn secondary" @click="cancelEditProxy">Cancel</button>
+          <span v-if="proxyFormMsg" class="muted">{{ proxyFormMsg }}</span>
+        </div>
+
+        <!-- platforms -->
         <div class="row" style="margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
           <span class="muted">Use proxy for:</span>
           <label class="muted chk"><input type="checkbox" :checked="allPlatforms" @change="toggleAllPlatforms" /> All</label>
@@ -44,17 +79,45 @@
             <input type="checkbox" :checked="smartPlatformsChecked.includes(p)" @change="togglePlatform(p)" /> {{ p }}
           </label>
         </div>
+
+        <!-- tests -->
         <div class="row" style="margin-bottom: 8px; align-items: center;">
-          <button class="btn secondary" :disabled="proxyBusy" @click="doProxyTest">
+          <button class="btn secondary" :disabled="proxyBusy || !activeProxyId" @click="doProxyTest">
             {{ proxyBusy ? 'Testing…' : 'Test proxy' }}
           </button>
           <input v-model="siteTestUrl" class="url-input" placeholder="Site URL to test (e.g. https://www.tiktok.com)" />
-          <button class="btn secondary" :disabled="proxyBusy || !siteTestUrl.trim()" @click="doSiteTest">
+          <button class="btn secondary" :disabled="proxyBusy || !activeProxyId || !siteTestUrl.trim()" @click="doSiteTest">
             Test site
           </button>
         </div>
         <div v-if="proxyMsg" class="muted" style="font-size: 13px;">{{ proxyMsg }}</div>
       </div>
+    </div>
+
+    <div class="card">
+      <h3>POT Server <span class="muted" style="font-weight: normal; font-size: 13px;">(YouTube bot-check)</span></h3>
+      <p class="muted">
+        Deno-powered token server for YouTube. Starts automatically on the first YouTube
+        download — or control it here.
+      </p>
+      <div class="preview">
+        <div class="preview-row">
+          <span>Deno</span>
+          <span v-if="potDeno" class="badge ok">installed</span>
+          <span v-else class="badge err">missing</span>
+          <span class="muted" style="font-size: 12px;">{{ potDeno ? '' : 'get it from Runtime dependencies' }}</span>
+        </div>
+        <div class="preview-row">
+          <span>Server</span>
+          <span v-if="potRunning" class="badge ok">running :{{ potPort }}{{ potVersion ? ' (v' + potVersion + ')' : '' }}</span>
+          <span v-else class="badge">stopped</span>
+          <span class="spacer"></span>
+          <button v-if="!potRunning" class="btn secondary small" :disabled="potBusy || !potDeno" @click="doPotStart">Start</button>
+          <button v-else class="btn secondary small" :disabled="potBusy" @click="doPotStop">Stop</button>
+          <button class="btn secondary small" :disabled="potBusy" @click="loadPotStatus">Refresh</button>
+        </div>
+      </div>
+      <div v-if="potMsg" class="muted" style="font-size: 13px; margin-top: 8px;">{{ potMsg }}</div>
     </div>
 
     <div class="card">
@@ -126,7 +189,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import DepRow from '../components/DepRow.vue'
-import type { DepResult, DepsProgressEvent, CookieProfileMeta, SmartModeConfig } from '../types'
+import type { DepResult, DepsProgressEvent, CookieProfileMeta, SmartModeConfig, ProxyEntry, ProxyProtocol, PotStatus } from '../types'
 
 const deps = ref<DepResult[]>([])
 const loading = ref(true)
@@ -261,40 +324,136 @@ let cookiesUnsubscribe: (() => void) | null = null
 
 const smartPlatforms = ['youtube', 'tiktok', 'x', 'instagram', 'snapchat', 'pinterest']
 const smartEnabled = ref(false)
+const proxies = ref<ProxyEntry[]>([])
+const activeProxyId = ref<string | null>(null)
+const smartPlatformsChecked = ref<string[]>(['all'])
+// proxy form
+const proxyName = ref('')
+const proxyProtocol = ref<ProxyProtocol>('http')
 const proxyHost = ref('')
 const proxyPort = ref(8080)
 const proxyUser = ref('')
 const proxyPass = ref('')
-const smartPlatformsChecked = ref<string[]>(['all'])
+const editingProxyId = ref<string | null>(null)
+const proxyFormMsg = ref('')
 const proxyBusy = ref(false)
 const proxyMsg = ref('')
 const siteTestUrl = ref('')
 
 const allPlatforms = computed(() => smartPlatformsChecked.value.includes('all'))
 
+function newProxyId(): string {
+  return 'proxy-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
 async function loadSmart() {
   try {
     const s = await window.dpApi.getSettings()
-    const sm: SmartModeConfig = s.smartMode ?? { enabled: false, proxy: { host: '', port: 8080, username: '', password: '' }, platforms: ['all'] }
+    const sm: SmartModeConfig = s.smartMode ?? { enabled: false, proxies: [], activeProxyId: null, platforms: ['all'] }
     smartEnabled.value = sm.enabled
-    proxyHost.value = sm.proxy.host
-    proxyPort.value = sm.proxy.port
-    proxyUser.value = sm.proxy.username
-    proxyPass.value = sm.proxy.password
-    smartPlatformsChecked.value = sm.platforms
+    proxies.value = sm.proxies ?? []
+    activeProxyId.value = sm.activeProxyId ?? null
+    smartPlatformsChecked.value = sm.platforms?.length ? sm.platforms : ['all']
   } catch { /* ignore */ }
 }
 
+async function persistSmart(): Promise<void> {
+  await window.dpApi.setSettings({
+    smartMode: {
+      enabled: smartEnabled.value,
+      proxies: proxies.value,
+      activeProxyId: activeProxyId.value,
+      platforms: smartPlatformsChecked.value
+    }
+  })
+}
+
 async function saveSmart() {
+  try { await persistSmart() } catch { /* ignore */ }
+}
+
+function clearProxyForm() {
+  proxyName.value = ''
+  proxyProtocol.value = 'http'
+  proxyHost.value = ''
+  proxyPort.value = 8080
+  proxyUser.value = ''
+  proxyPass.value = ''
+  editingProxyId.value = null
+  proxyFormMsg.value = ''
+}
+
+async function saveProxy() {
+  proxyFormMsg.value = ''
+  if (!proxyHost.value.trim()) {
+    proxyFormMsg.value = 'Host is required.'
+    return
+  }
   try {
-    await window.dpApi.setSettings({
-      smartMode: {
-        enabled: smartEnabled.value,
-        proxy: { host: proxyHost.value, port: proxyPort.value || 8080, username: proxyUser.value, password: proxyPass.value },
-        platforms: smartPlatformsChecked.value
+    if (editingProxyId.value) {
+      const i = proxies.value.findIndex((p) => p.id === editingProxyId.value)
+      if (i >= 0) {
+        proxies.value[i] = {
+          ...proxies.value[i],
+          name: proxyName.value.trim() || 'Unnamed',
+          protocol: proxyProtocol.value,
+          host: proxyHost.value.trim(),
+          port: proxyPort.value || 8080,
+          username: proxyUser.value,
+          password: proxyPass.value
+        }
       }
-    })
-  } catch { /* ignore */ }
+      proxyFormMsg.value = 'Proxy updated ✓'
+    } else {
+      const entry: ProxyEntry = {
+        id: newProxyId(),
+        name: proxyName.value.trim() || 'Unnamed',
+        protocol: proxyProtocol.value,
+        host: proxyHost.value.trim(),
+        port: proxyPort.value || 8080,
+        username: proxyUser.value,
+        password: proxyPass.value
+      }
+      proxies.value = [...proxies.value, entry]
+      // first proxy becomes active automatically
+      if (!activeProxyId.value) activeProxyId.value = entry.id
+      proxyFormMsg.value = 'Proxy saved ✓'
+    }
+    await persistSmart()
+    clearProxyForm()
+  } catch (e) {
+    proxyFormMsg.value = `Save failed: ${(e as Error).message}`
+  }
+}
+
+function editProxy(p: ProxyEntry) {
+  proxyName.value = p.name
+  proxyProtocol.value = p.protocol
+  proxyHost.value = p.host
+  proxyPort.value = p.port
+  proxyUser.value = p.username
+  proxyPass.value = p.password
+  editingProxyId.value = p.id
+  proxyFormMsg.value = ''
+}
+
+function cancelEditProxy() {
+  clearProxyForm()
+}
+
+async function deleteProxy(id: string) {
+  proxies.value = proxies.value.filter((p) => p.id !== id)
+  if (activeProxyId.value === id) {
+    activeProxyId.value = proxies.value.length ? proxies.value[0].id : null
+  }
+  if (editingProxyId.value === id) clearProxyForm()
+  await saveSmart()
+}
+
+async function useProxy(id: string) {
+  activeProxyId.value = id
+  proxyMsg.value = ''
+  await saveSmart()
 }
 
 function togglePlatform(p: string) {
@@ -306,7 +465,6 @@ function togglePlatform(p: string) {
 }
 
 function toggleAllPlatforms() {
-  // "All" checkbox: checked → ['all']; unchecked → individual picks (start empty)
   smartPlatformsChecked.value = allPlatforms.value ? [] : ['all']
   saveSmart()
 }
@@ -315,7 +473,6 @@ async function doProxyTest() {
   proxyBusy.value = true
   proxyMsg.value = ''
   try {
-    await saveSmart()
     const r = await window.dpApi.proxyTest()
     proxyMsg.value = `Proxy works ✓ — exit IP: ${r.ip}`
   } catch (e) {
@@ -329,13 +486,61 @@ async function doSiteTest() {
   proxyBusy.value = true
   proxyMsg.value = ''
   try {
-    await saveSmart()
     const r = await window.dpApi.proxyTestSite(siteTestUrl.value)
     proxyMsg.value = `Site reachable via proxy ✓ (HTTP ${r.status}) — not blocked`
   } catch (e) {
     proxyMsg.value = `Site test: ${(e as Error).message}`
   } finally {
     proxyBusy.value = false
+  }
+}
+
+// ---- POT server status (Phase 2b panel) ----
+
+const potDeno = ref(false)
+const potRunning = ref(false)
+const potVersion = ref<string | null>(null)
+const potPort = ref(4416)
+const potBusy = ref(false)
+const potMsg = ref('')
+
+async function loadPotStatus() {
+  potMsg.value = ''
+  try {
+    const s: PotStatus = await window.dpApi.potStatus()
+    potDeno.value = !!s.denoPath
+    potRunning.value = s.running
+    potVersion.value = s.version
+    potPort.value = s.port
+  } catch (e) {
+    potMsg.value = `Status check failed: ${(e as Error).message}`
+  }
+}
+
+async function doPotStart() {
+  potBusy.value = true
+  potMsg.value = 'Starting… (first run installs dependencies, may take a minute)'
+  try {
+    await window.dpApi.potStart()
+    potMsg.value = 'Server running ✓'
+  } catch (e) {
+    potMsg.value = `Start failed: ${(e as Error).message}`
+  } finally {
+    potBusy.value = false
+    loadPotStatus()
+  }
+}
+
+async function doPotStop() {
+  potBusy.value = true
+  try {
+    await window.dpApi.potStop()
+    potMsg.value = 'Server stopped.'
+  } catch (e) {
+    potMsg.value = `Stop failed: ${(e as Error).message}`
+  } finally {
+    potBusy.value = false
+    loadPotStatus()
   }
 }
 
@@ -353,6 +558,7 @@ onMounted(() => {
   loadSettings()
   loadCookies()
   loadSmart()
+  loadPotStatus()
 })
 
 onUnmounted(() => {
