@@ -1,11 +1,13 @@
-// Command dp-deps 是 DownPilot 的依赖探测与下载边车。
+// Command dp-deps is DownPilot's dependency detection and download sidecar.
 //
-// DownPilot 不再自带 yt-dlp / ffmpeg 二进制：安装包只带本程序，
-// 启动时由它识别机器上已安装的依赖并直接复用，缺失的再由用户点击下载。
+// DownPilot no longer bundles yt-dlp / ffmpeg binaries: the installer ships only this program;
+// at startup it detects already-installed dependencies on the machine and reuses them directly,
 //
-// 输出约定：stdout 为 NDJSON 事件流（供 Electron 逐行解析），stderr 为人类可读日志。
+// and the user downloads whatever is missing with one click.
 //
-// 用法：
+// Output contract: stdout is an NDJSON event stream (parsed line-by-line by Electron), stderr is human-readable logs.
+//
+// Usage:
 //
 //	dp-deps detect  --managed-dir <dir> [--manual yt-dlp=<path>] [--json]
 //	dp-deps fetch   --managed-dir <dir> [--only yt-dlp,ffmpeg] [--proxy <url>] [--force]
@@ -30,13 +32,13 @@ import (
 	rt "github.com/ShahzaibRao/downpilot/backend/internal/runtime"
 )
 
-// Version 构建号，由 package.json 的下载后端版本决定
+// Version build number, decided by package.json's download backend version
 const Version = "1.0.0"
 
 func main() {
-	// 把清单里 pin 的版本注入 runtime 作为最低门槛。
-	// 放这里是因为 runtime 不能 import manifest（会形成 import cycle），
-	// 而 CLI 同时依赖两者。
+	// Inject the manifest-pinned versions into runtime as minimum thresholds.
+	// This lives here because runtime cannot import manifest (would create an import cycle),
+	// while the CLI depends on both.
 	rt.MinVersions[rt.KindYtDlp] = manifest.MinYtDlpVersion()
 	rt.MinVersions[rt.KindGalleryDl] = manifest.MinGalleryDlVersion()
 	rt.MinVersions[rt.KindDeno] = manifest.MinDenoVersion()
@@ -56,29 +58,29 @@ func main() {
 	case "help", "--help", "-h":
 		usage()
 	default:
-		cli.Fail("未知子命令：" + os.Args[1])
+		cli.Fail("unknown subcommand: " + os.Args[1])
 	}
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `dp-deps — DownPilot 依赖探测与下载
+	fmt.Fprint(os.Stderr, `dp-deps — DownPilot dependency detection and download
 
-  detect  探测 yt-dlp / ffmpeg / ffprobe / gallery-dl / deno，输出 JSON 结果
-  fetch   下载缺失的依赖到托管目录（SHA-256 校验）
-  version 输出版本与平台
+  detect  Probe yt-dlp / ffmpeg / ffprobe / gallery-dl / deno, output JSON results
+  fetch   Download missing dependencies into the managed dir (SHA-256 verified)
+  version Print version and platform
 
-detect 参数：
-  --managed-dir <dir>     托管目录（下载安装位置）
-  --manual <kind>=<path>  手动指定的可执行文件路径，可重复
-  --json                  单行 JSON 输出（默认按事件流输出）
-  --timeout <秒>          检测总时限，默认 80（不传即用 rt.DetectTimeout）
+detect flags:
+  --managed-dir <dir>     Managed dir (where downloads are installed)
+  --manual <kind>=<path>  Manually specified executable path, repeatable
+  --json                  Single-line JSON output (default is event stream)
+  --timeout <sec>          Total detection timeout, default 80 (falls back to rt.DetectTimeout)
 
-fetch 参数：
-  --managed-dir <dir>     托管目录（必填）
-  --only <a,b>            只下载指定依赖，默认全部
-  --proxy <url>           下载使用的代理
-  --force                 即使已存在也重新下载
-  --timeout <秒>          单次请求超时，默认 1800
+fetch flags:
+  --managed-dir <dir>     Managed dir (required)
+  --only <a,b>            Only download the given deps, comma-separated (default: all)
+  --proxy <url>           Proxy for downloads
+  --force                 Re-download even if already present
+  --timeout <sec>          Per-request timeout, default 1800
 `)
 }
 
@@ -91,12 +93,12 @@ type detectRequest struct {
 
 func runDetect(args []string) {
 	fs := flag.NewFlagSet("detect", flag.ExitOnError)
-	managedDir := fs.String("managed-dir", "", "托管目录")
-	jsonOutput := fs.Bool("json", false, "单行 JSON 输出")
-	timeout := fs.Int("timeout", int(rt.DetectTimeout/time.Second), "检测总时限（秒）")
+	managedDir := fs.String("managed-dir", "", "managed dir")
+	jsonOutput := fs.Bool("json", false, "single-line JSON output")
+	timeout := fs.Int("timeout", int(rt.DetectTimeout/time.Second), "total detection timeout (seconds)")
 	var manual manualFlags
-	fs.Var(&manual, "manual", "手动指定路径 kind=path，可重复")
-	// 兼容 --manual-dir/--manual-path 两种等价写法
+	fs.Var(&manual, "manual", "manually specify path as kind=path, repeatable")
+	// Accept both --manual-dir and --manual-path as equivalents
 	_ = fs.Parse(args)
 
 	manualPaths := make(map[rt.Kind]string, len(manual))
@@ -105,7 +107,7 @@ func runDetect(args []string) {
 	}
 	opts := rt.Options{ManagedDir: *managedDir, ManualPaths: manualPaths}
 	if *timeout <= 0 {
-		cli.Fail("检测时限必须大于 0")
+		cli.Fail("detection timeout must be greater than 0")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeout)*time.Second)
 	defer cancel()
@@ -114,8 +116,8 @@ func runDetect(args []string) {
 	payload := map[string]any{
 		"event":    "detect",
 		"platform": manifest.CurrentPlatform(),
-		// 同时给出 Go 的命名，便于排查"平台键对不上资产表"这类问题
-		// （曾经因此让所有 x64 平台的依赖下载失效，见 issue #40）
+		// Also print Go's naming to help diagnose "platform key doesn't match asset table" issues
+		// (this once broke dependency downloads on all x64 platforms, see issue #40)
 		"goPlatform": runtime.GOOS + "/" + runtime.GOARCH,
 		"managedDir": *managedDir,
 		"results":    results,
@@ -129,9 +131,9 @@ func runDetect(args []string) {
 	cli.Emit(payload)
 	for _, r := range results {
 		if r.Found {
-			cli.Log(fmt.Sprintf("%s 已就绪：%s（%s，%s）", r.Kind, r.Version, r.Source, r.Path))
+			cli.Log(fmt.Sprintf("%s ready: %s (%s, %s)", r.Kind, r.Version, r.Source, r.Path))
 		} else {
-			cli.Log(fmt.Sprintf("%s 缺失：%s", r.Kind, r.Reason))
+			cli.Log(fmt.Sprintf("%s missing: %s", r.Kind, r.Reason))
 		}
 	}
 }
@@ -140,15 +142,15 @@ func runDetect(args []string) {
 
 func runFetch(args []string) {
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
-	managedDir := fs.String("managed-dir", "", "托管目录（必填）")
-	only := fs.String("only", "", "只下载指定依赖，逗号分隔")
-	proxy := fs.String("proxy", "", "下载代理")
-	force := fs.Bool("force", false, "已存在时也重新下载")
-	timeout := fs.Int("timeout", 1800, "单次请求超时（秒）")
+	managedDir := fs.String("managed-dir", "", "managed dir (required)")
+	only := fs.String("only", "", "only download the given deps, comma-separated")
+	proxy := fs.String("proxy", "", "download proxy")
+	force := fs.Bool("force", false, "re-download even if present")
+	timeout := fs.Int("timeout", 1800, "per-request timeout (seconds)")
 	_ = fs.Parse(args)
 
 	if *managedDir == "" {
-		cli.Fail("fetch 需要 --managed-dir 参数")
+		cli.Fail("fetch requires the --managed-dir flag")
 	}
 
 	var onlyList []string
@@ -163,13 +165,13 @@ func runFetch(args []string) {
 		cli.Fail(err.Error())
 	}
 
-	// 非 --force 时跳过已存在且可执行的依赖
+	// Without --force, skip deps that already exist and are executable
 	if !*force {
 		tasks = filterMissing(tasks, *managedDir)
 	}
 	if len(tasks) == 0 {
-		cli.Emit(map[string]any{"event": "done", "skipped": true, "message": "依赖已存在，无需下载"})
-		cli.Log("所有依赖均已存在，跳过下载")
+		cli.Emit(map[string]any{"event": "done", "skipped": true, "message": "dependencies already present, nothing to download"})
+		cli.Log("all dependencies already present, skipping download")
 		return
 	}
 
@@ -198,30 +200,30 @@ func runFetch(args []string) {
 		cli.Fail(err.Error())
 	}
 
-	// 安装后的平台处理（macOS 去隔离属性 + ad-hoc 签名）
+	// Post-install platform handling (macOS: clear quarantine attrs + ad-hoc sign)
 	for _, task := range tasks {
 		fetch.Finalize(task.Target, fetch.Options{}, emit)
 		summary = append(summary, fetch.Event{Event: "installed", Tool: task.Tool, Path: task.Target})
 	}
 
-	// 回读刚装好的版本，让界面能立即显示
+	// Re-read the just-installed versions so the UI can display them immediately
 	opts := rt.Options{ManagedDir: *managedDir}
 	results := make([]rt.Result, 0, len(tasks))
 	for _, task := range tasks {
 		results = append(results, rt.FindOne(rt.Kind(task.Tool), opts))
 	}
 	cli.Emit(map[string]any{"event": "done", "installed": summary, "results": results})
-	cli.Log("依赖安装完成")
+	cli.Log("dependency installation complete")
 }
 
-// filterMissing 只保留尚未安装（或安装位置不可执行）的依赖
+// filterMissing keeps only deps that are not yet installed (or not executable at their location)
 func filterMissing(tasks []fetch.Task, managedDir string) []fetch.Task {
 	opts := rt.Options{ManagedDir: managedDir}
 	keep := make([]fetch.Task, 0, len(tasks))
 	for _, task := range tasks {
 		res := rt.FindOne(rt.Kind(task.Tool), opts)
 		if res.Found && res.Managed {
-			cli.Log(task.Tool + " 已存在，跳过")
+			cli.Log(task.Tool + " already present, skipping")
 			continue
 		}
 		keep = append(keep, task)
@@ -229,7 +231,7 @@ func filterMissing(tasks []fetch.Task, managedDir string) []fetch.Task {
 	return keep
 }
 
-// manualFlags 支持 --manual kind=path 重复出现
+// manualFlags supports repeated --manual kind=path flags
 type manualFlags map[string]string
 
 func (m *manualFlags) String() string {
@@ -246,7 +248,7 @@ func (m *manualFlags) String() string {
 func (m *manualFlags) Set(value string) error {
 	key, val, ok := strings.Cut(value, "=")
 	if !ok {
-		return fmt.Errorf("格式应为 kind=path，收到 %q", value)
+		return fmt.Errorf("expected format kind=path, got %q", value)
 	}
 	if *m == nil {
 		*m = map[string]string{}
