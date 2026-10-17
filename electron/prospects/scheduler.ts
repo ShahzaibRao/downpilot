@@ -43,8 +43,9 @@ export interface CheckResult {
   error?: string
 }
 
-/** 60 minutes between auto-checks. */
+/** 60 minutes default; scheduler ticks every 5 min and checks due prospects. */
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000
+const TICK_MS = 5 * 60 * 1000
 /** Max new items per prospect per check (configurable later). */
 export const DEFAULT_MAX_NEW = 20
 
@@ -93,9 +94,8 @@ export async function listItems(
 
 /**
  * Fallback listing via gallery-dl (Phase 1b rule: yt-dlp → gallery-dl → error).
- * Uses --dump-json; parses extractor-specific IDs into post URLs.
- * This is what catches image posts on Instagram/X/Snapchat that yt-dlp
- * can't list or download.
+ * Uses --print with extractor-specific formats (CreatorWatch approach —
+ * much more reliable than --dump-json parsing).
  */
 export async function listItemsGalleryDl(
   gdlPath: string,
@@ -105,11 +105,25 @@ export async function listItemsGalleryDl(
   cookiesFile?: string | null,
   proxyUrl?: string | null
 ): Promise<ProspectItem[]> {
+  // CreatorWatch formats: shortcode/post_url for IG, tweet_id for X
+  let printFmt: string
+  let targetUrl = url
+  if (platform === 'instagram') {
+    printFmt = '{shortcode} :: {post_url} :: {caption}'
+    targetUrl = url.replace(/\/$/, '') + '/'  // trailing slash needed
+  } else if (platform === 'x') {
+    printFmt = '{tweet_id} :: {content}'
+  } else if (platform === 'tiktok') {
+    printFmt = '{id} :: {title}'
+  } else {
+    printFmt = '{id} :: {title} :: {webpage_url}'
+  }
+
   const args = [
-    '--dump-json',
-    '--no-download',
+    '--print', printFmt,
     '--range', `1-${limit}`,
-    url
+    '--no-mtime',
+    targetUrl
   ]
   if (cookiesFile) args.push('--cookies', cookiesFile)
   if (proxyUrl) args.push('--proxy', proxyUrl)
@@ -122,36 +136,68 @@ export async function listItemsGalleryDl(
 
   const username = extractUsername(url)
   const items: ProspectItem[] = []
-  let rawLines = 0
-  let jsonLines = 0
-  let loggedSample = false
+  const seen = new Set<string>()
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    rawLines++
-    if (!trimmed.startsWith('{')) continue
-    jsonLines++
-    try {
-      const obj = JSON.parse(trimmed)
-      // debug: log first successfully parsed object's structure
-      if (!loggedSample) {
-        loggedSample = true
-        const keys = Object.keys(obj)
-        const sample: Record<string, string> = {}
-        for (const k of keys.slice(0, 20)) {
-          const v = obj[k]
-          sample[k] = typeof v === 'object' ? `[${Array.isArray(v) ? 'array' : 'object'}]` : String(v).slice(0, 40)
-        }
-        log(`gallery-dl sample for ${platform}: ${JSON.stringify(sample).slice(0, 500)}`)
-      }
-      const parsed = parseGalleryItem(obj, platform, username)
-      if (parsed) items.push(parsed)
-    } catch {
-      /* skip malformed JSON lines */
+    const parts = trimmed.split(' :: ')
+    if (parts.length < 2) continue
+    const parsed = parseGalleryPrint(parts, platform, username)
+    if (parsed && !seen.has(parsed.id)) {
+      seen.add(parsed.id)
+      items.push(parsed)
+      if (items.length >= limit) break
     }
   }
-  log(`gallery-dl raw: ${rawLines} lines, ${jsonLines} JSON, ${items.length} parsed`)
-  return items.slice(0, limit)
+  log(`gallery-dl: ${items.length} items parsed for ${platform}`)
+  return items
+}
+
+/** Parse one --print line into a ProspectItem. */
+export function parseGalleryPrint(parts: string[], platform: string, username: string): ProspectItem | null {
+  if (platform === 'instagram') {
+    // "{shortcode} :: {post_url} :: {caption}"
+    const [shortcode, postUrl, caption] = parts
+    if (!shortcode?.trim() || !postUrl?.trim().startsWith('http')) return null
+    return {
+      id: `ig_${shortcode.trim()}`,
+      title: (caption?.trim() || shortcode.trim()).slice(0, 100),
+      url: postUrl.trim()
+    }
+  }
+  if (platform === 'x') {
+    // "{tweet_id} :: {content}" → use /i/web/status/ (NOT /i/status/!)
+    const [tweetId, content] = parts
+    const tid = tweetId?.trim()
+    if (!tid || !/^\d+$/.test(tid)) return null
+    return {
+      id: `x_${tid}`,
+      title: (content?.trim() || tid).slice(0, 100),
+      url: `https://x.com/i/web/status/${tid}`
+    }
+  }
+  if (platform === 'tiktok') {
+    // "{id} :: {title}"
+    const [id, title] = parts
+    const vid = id?.trim()
+    if (!vid || vid === '0') return null
+    return {
+      id: `tt_${vid}`,
+      title: (title?.trim() || vid).slice(0, 100),
+      url: username
+        ? `https://www.tiktok.com/@${username}/video/${vid}`
+        : `https://www.tiktok.com/video/${vid}`
+    }
+  }
+  // generic: "{id} :: {title} :: {webpage_url}"
+  const [id, title, pageUrl] = parts
+  const gid = id?.trim()
+  if (!gid) return null
+  return {
+    id: `${platform}_${gid}`,
+    title: (title?.trim() || gid).slice(0, 100),
+    url: pageUrl?.trim().startsWith('http') ? pageUrl.trim() : ''
+  }
 }
 
 /** username/handle from a profile URL (for building TikTok video URLs). */
@@ -168,92 +214,6 @@ function extractUsername(url: string): string {
 }
 
 /** Parse one gallery-dl --dump-json object into a ProspectItem. */
-export function parseGalleryItem(obj: any, platform: string, username: string): ProspectItem | null {
-  const str = (v: any) => (v == null ? '' : String(v))
-
-  // Try platform-specific fields first, then generic ID hunting.
-  // Gallery-dl structures vary by extractor version; be lenient.
-  const huntId = (): string => {
-    const candidates = [
-      obj.shortcode,           // instagram post
-      obj.tweet_id, obj.tweetId, // x
-      obj.media_id, obj.mediaId,
-      obj.post_id, obj.postId,
-      obj.id, obj.pk,
-      obj.aweme_id,            // tiktok
-      obj.video_id, obj.videoId,
-    ]
-    for (const c of candidates) {
-      const s = str(c).trim()
-      if (s && s !== '0' && s !== 'None') return s
-    }
-    return ''
-  }
-
-  const huntTitle = (fallback: string): string => {
-    for (const k of ['title', 'caption', 'desc', 'description', 'content', 'text']) {
-      const s = str(obj[k]).trim()
-      if (s) return s.slice(0, 100)
-    }
-    return fallback.slice(0, 100)
-  }
-
-  if (platform === 'instagram') {
-    // shortcode → /p/ URL; numeric media_id → also usable via /p/ lookup fails,
-    // so prefer shortcode; fall back to generic
-    const shortcode = str(obj.shortcode).trim()
-    if (shortcode) {
-      return {
-        id: `ig_${shortcode}`,
-        title: huntTitle(shortcode),
-        url: `https://www.instagram.com/p/${shortcode}/`
-      }
-    }
-  }
-  if (platform === 'tiktok') {
-    const id = str(obj.aweme_id || obj.id).trim()
-    if (id && id !== '0') {
-      return {
-        id: `tt_${id}`,
-        title: huntTitle(id),
-        url: username
-          ? `https://www.tiktok.com/@${username}/video/${id}`
-          : `https://www.tiktok.com/video/${id}`
-      }
-    }
-  }
-  if (platform === 'x') {
-    const id = str(obj.tweet_id || obj.tweetId || obj.id).trim()
-    if (id && id !== '0') {
-      return {
-        id: `x_${id}`,
-        title: huntTitle(id),
-        url: `https://x.com/i/status/${id}`
-      }
-    }
-  }
-  if (platform === 'snapchat') {
-    const id = huntId()
-    if (id) {
-      const pageUrl = str(obj.webpage_url).trim()
-      return {
-        id: `sc_${id}`,
-        title: huntTitle(id),
-        url: pageUrl.startsWith('http') ? pageUrl : ''
-      }
-    }
-    return null
-  }
-  // generic fallback: any ID we can find
-  const id = huntId()
-  if (!id) return null
-  const pageUrl = str(obj.webpage_url).trim()
-  return {
-    id: `${platform}_${id}`,
-    title: huntTitle(id),
-    url: pageUrl.startsWith('http') ? pageUrl : ''
-  }
-}
 
 /**
  * List with fallback: yt-dlp first, gallery-dl second.
@@ -320,10 +280,11 @@ export class ProspectScheduler {
 
   start(): void {
     if (this.timer) return
-    // first check 2 min after start (let the app settle), then every 60 min
+    // tick every 5 min; each prospect checked per its own interval (default 60)
+    const tick = () => void this.checkDue()
     this.timer = setTimeout(() => {
-      void this.checkAll()
-      this.timer = setInterval(() => void this.checkAll(), CHECK_INTERVAL_MS)
+      void this.checkDue()
+      this.timer = setInterval(tick, TICK_MS)
     }, 2 * 60 * 1000)
   }
 
@@ -335,7 +296,34 @@ export class ProspectScheduler {
     }
   }
 
-  /** Manual trigger (UI "Check now"). */
+  /** Check prospects whose interval has elapsed since last check. */
+  async checkDue(): Promise<CheckResult[]> {
+    if (this.running) return []
+    const store = this.deps.getStore()
+    const now = Date.now()
+    const due = store.list().filter((p) => {
+      if (p.status !== 'ok') return false
+      if (!p.lastCheck) return true  // never checked → due
+      const intervalMs = (p.intervalMinutes || 60) * 60 * 1000
+      return now - new Date(p.lastCheck).getTime() >= intervalMs
+    })
+    if (due.length === 0) return []
+    log(`checkDue: ${due.length} prospect(s) due`)
+    this.running = true
+    const results: CheckResult[] = []
+    try {
+      for (const p of due) {
+        const r = await this.checkOne(p.id)
+        if (r) results.push(r)
+      }
+    } finally {
+      this.running = false
+    }
+    this.deps.onCheckDone?.(results)
+    return results
+  }
+
+  /** Manual trigger (UI "Check now") — checks all, regardless of interval. */
   async checkAll(): Promise<CheckResult[]> {
     if (this.running) return []
     this.running = true
