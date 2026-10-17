@@ -1,0 +1,28 @@
+{
+  "author": "Rao Shahzaib",
+  "dependencies": {
+    "vue": "^3.5.44"
+  },
+  "description": "DownPilot \u2014 creator-first download manager (Quick + Prospect modes)",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "electron": "^44.9.0",
+    "electron-vite": "^6.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.3.4",
+    "vue-tsc": "^3.0.0"
+  },
+  "license": "MIT",
+  "main": "./out/main/index.js",
+  "name": "downpilot",
+  "scripts": {
+    "build": "electron-vite build",
+    "dev": "electron-vite dev",
+    "manifest": "node scripts/gen-deps-manifest.mjs --reuse-hashes",
+    "sidecar:build": "cd backend && go build -o bin/dp-deps ./cmd/dp-deps",
+    "sidecar:build:win": "cd backend && go build -o bin/dp-deps.exe ./cmd/dp-deps",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "version": "0.1.0"
+}
