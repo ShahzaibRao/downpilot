@@ -479,10 +479,10 @@ ipcMain.handle('prospects:list', async () => {
   return getProspectStore().list()
 })
 
-ipcMain.handle('prospects:add', async (_event, url: string, name?: string, quality?: string) => {
+ipcMain.handle('prospects:add', async (_event, url: string, name?: string, quality?: string, intervalMinutes?: number) => {
   if (!url || !/^https?:\/\//i.test(url)) throw new Error('Enter a valid http(s) profile URL')
   const q = ['best', '4k', '1080p', '720p', '480p'].includes(quality ?? '') ? quality as 'best' | '4k' | '1080p' | '720p' | '480p' : 'best'
-  return getProspectStore().add(url, name, q)
+  return getProspectStore().add(url, name, q, intervalMinutes)
 })
 
 ipcMain.handle('prospects:addLink', async (_event, prospectId: string, url: string) => {
@@ -529,6 +529,10 @@ ipcMain.handle('prospects:updateLink', async (_event, prospectId: string, linkId
 
 ipcMain.handle('prospects:setQuality', async (_event, id: string, quality: string) => {
   return getProspectStore().setQuality(id, quality as 'best' | '4k' | '1080p' | '720p' | '480p')
+})
+
+ipcMain.handle('prospects:setInterval', async (_event, id: string, minutes: number) => {
+  return getProspectStore().setInterval(id, minutes)
 })
 
 // ---- IPC: notifications (Phase 3c) ----
