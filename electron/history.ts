@@ -12,6 +12,9 @@ export interface HistoryEntry {
   error?: string
   downloaded: number
   completedAt: number
+  /** set for prospect auto-downloads */
+  prospectId?: string
+  prospectName?: string
 }
 
 const MAX_ENTRIES = 100
