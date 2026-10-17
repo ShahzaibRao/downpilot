@@ -143,6 +143,25 @@ export class ProspectStore {
     this.save()
   }
 
+  /** Update a link's URL (re-derives platform). */
+  updateLink(prospectId: string, linkId: string, newUrl: string): ProspectLink {
+    const p = this.get(prospectId)
+    if (!p) throw new Error('Prospect not found')
+    const link = p.links.find((l) => l.id === linkId)
+    if (!link) throw new Error('Link not found')
+    const trimmed = newUrl.trim()
+    if (!/^https?:\/\//i.test(trimmed)) throw new Error('Enter a valid http(s) URL')
+    const norm = trimmed.toLowerCase()
+    if (p.links.some((l) => l.id !== linkId && l.url.toLowerCase() === norm)) {
+      throw new Error('This URL is already added for this prospect')
+    }
+    const info = prospectNameFromUrl(trimmed)
+    link.url = trimmed
+    link.platform = info.platform
+    this.save()
+    return link
+  }
+
   remove(id: string): void {
     this.prospects = this.prospects.filter((p) => p.id !== id)
     this.save()
