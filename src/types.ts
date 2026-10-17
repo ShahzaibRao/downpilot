@@ -175,6 +175,7 @@ export interface PotStatus {
 export interface Settings {
   downloadDir: string
   maxConcurrent: number
+  maxNewPerCheck: number
   smartMode: SmartModeConfig
 }
 
