@@ -170,51 +170,88 @@ function extractUsername(url: string): string {
 /** Parse one gallery-dl --dump-json object into a ProspectItem. */
 export function parseGalleryItem(obj: any, platform: string, username: string): ProspectItem | null {
   const str = (v: any) => (v == null ? '' : String(v))
+
+  // Try platform-specific fields first, then generic ID hunting.
+  // Gallery-dl structures vary by extractor version; be lenient.
+  const huntId = (): string => {
+    const candidates = [
+      obj.shortcode,           // instagram post
+      obj.tweet_id, obj.tweetId, // x
+      obj.media_id, obj.mediaId,
+      obj.post_id, obj.postId,
+      obj.id, obj.pk,
+      obj.aweme_id,            // tiktok
+      obj.video_id, obj.videoId,
+    ]
+    for (const c of candidates) {
+      const s = str(c).trim()
+      if (s && s !== '0' && s !== 'None') return s
+    }
+    return ''
+  }
+
+  const huntTitle = (fallback: string): string => {
+    for (const k of ['title', 'caption', 'desc', 'description', 'content', 'text']) {
+      const s = str(obj[k]).trim()
+      if (s) return s.slice(0, 100)
+    }
+    return fallback.slice(0, 100)
+  }
+
   if (platform === 'instagram') {
-    const shortcode = str(obj.shortcode)
-    if (!shortcode) return null
-    return {
-      id: `ig_${shortcode}`,
-      title: str(obj.title || obj.caption || shortcode).slice(0, 100),
-      url: `https://www.instagram.com/p/${shortcode}/`
+    // shortcode → /p/ URL; numeric media_id → also usable via /p/ lookup fails,
+    // so prefer shortcode; fall back to generic
+    const shortcode = str(obj.shortcode).trim()
+    if (shortcode) {
+      return {
+        id: `ig_${shortcode}`,
+        title: huntTitle(shortcode),
+        url: `https://www.instagram.com/p/${shortcode}/`
+      }
     }
   }
   if (platform === 'tiktok') {
-    const id = str(obj.id)
-    if (!id) return null
-    return {
-      id: `tt_${id}`,
-      title: str(obj.title || obj.desc || id).slice(0, 100),
-      url: username
-        ? `https://www.tiktok.com/@${username}/video/${id}`
-        : `https://www.tiktok.com/video/${id}`
+    const id = str(obj.aweme_id || obj.id).trim()
+    if (id && id !== '0') {
+      return {
+        id: `tt_${id}`,
+        title: huntTitle(id),
+        url: username
+          ? `https://www.tiktok.com/@${username}/video/${id}`
+          : `https://www.tiktok.com/video/${id}`
+      }
     }
   }
   if (platform === 'x') {
-    const id = str(obj.tweet_id || obj.id)
-    if (!id) return null
-    return {
-      id: `x_${id}`,
-      title: str(obj.content || obj.title || id).slice(0, 100),
-      url: `https://x.com/i/status/${id}`
+    const id = str(obj.tweet_id || obj.tweetId || obj.id).trim()
+    if (id && id !== '0') {
+      return {
+        id: `x_${id}`,
+        title: huntTitle(id),
+        url: `https://x.com/i/status/${id}`
+      }
     }
   }
   if (platform === 'snapchat') {
-    const id = str(obj.id || obj.snap_id)
-    if (!id) return null
-    return {
-      id: `sc_${id}`,
-      title: str(obj.title || id).slice(0, 100),
-      url: str(obj.webpage_url)
+    const id = huntId()
+    if (id) {
+      const pageUrl = str(obj.webpage_url).trim()
+      return {
+        id: `sc_${id}`,
+        title: huntTitle(id),
+        url: pageUrl.startsWith('http') ? pageUrl : ''
+      }
     }
+    return null
   }
-  // generic fallback
-  const id = str(obj.id || obj.post_id)
+  // generic fallback: any ID we can find
+  const id = huntId()
   if (!id) return null
+  const pageUrl = str(obj.webpage_url).trim()
   return {
     id: `${platform}_${id}`,
-    title: str(obj.title || id).slice(0, 100),
-    url: str(obj.webpage_url)
+    title: huntTitle(id),
+    url: pageUrl.startsWith('http') ? pageUrl : ''
   }
 }
 
