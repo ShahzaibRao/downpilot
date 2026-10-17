@@ -1,8 +1,11 @@
 import { app } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { killTree } from './download/engine'
+
+const execFileAsync = promisify(execFile)
 
 export const POT_PORT = 4416
 export const POT_HOST = '127.0.0.1'
@@ -111,6 +114,24 @@ export class PotManager {
     this.starting = null
   }
 
+  /**
+   * Force-kill whatever is listening on the POT port (external server).
+   * Used when the user wants to take over the port. Returns true if
+   * something was killed.
+   */
+  async forceStop(): Promise<boolean> {
+    // first try our own handle (if it's actually ours)
+    if (this.proc) {
+      this.stop()
+      return true
+    }
+    this.log(`[pot] force-stopping external server on :${POT_PORT}`)
+    const killed = await killPortOwner(POT_PORT)
+    this.weStartedIt = false
+    this.starting = null
+    return killed
+  }
+
   private async start(): Promise<boolean> {
     const denoPath = await this.getDenoPath()
     if (!denoPath) {
@@ -201,5 +222,40 @@ export class PotManager {
     })
     fs.writeFileSync(versionMarker(), POT_VERSION)
     this.log('[pot] server setup complete')
+  }
+}
+
+/**
+ * Kill the process(es) listening on a TCP port.
+ * Windows: netstat -ano → taskkill. POSIX: fuser -k.
+ */
+async function killPortOwner(port: number): Promise<boolean> {
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await execFileAsync('netstat', ['-ano'])
+      const pids = new Set<string>()
+      for (const line of stdout.split('\n')) {
+        // TCP    127.0.0.1:4416    0.0.0.0:0    LISTENING    1234
+        const m = line.match(/TCP\s+\S+?:(\d+)\s+\S+\s+\w+\s+(\d+)/i)
+        if (m && parseInt(m[1], 10) === port) pids.add(m[2])
+      }
+      if (pids.size === 0) return false
+      for (const pid of pids) {
+        try {
+          await execFileAsync('taskkill', ['/PID', pid, '/F'])
+        } catch {
+          /* one PID may fail; try the rest */
+        }
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+  try {
+    await execFileAsync('fuser', ['-k', `${port}/tcp`])
+    return true
+  } catch {
+    return false
   }
 }
