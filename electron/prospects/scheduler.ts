@@ -455,21 +455,27 @@ export class ProspectScheduler {
         const cookiesFile = this.deps.getCookiesFile(link.platform)
         const proxyUrl = this.deps.getProxyUrl(link.url)
         // Phase 1b rule: yt-dlp → gallery-dl → error (catches image posts)
-        const items = await listWithFallback(tools, link.url, link.platform, maxNew, cookiesFile, proxyUrl)
+        // For snapchat/instagram/x, gallery-dl is tried first (better extractors).
+        const items = await listWithFallback(tools, link.url, link.platform, Math.max(maxNew, 30), cookiesFile, proxyUrl)
 
         for (const item of items) {
-          if (newCount >= maxNew) break
           if (seen.has(p.id, item.id)) continue
           if (queuedIds.has(item.id)) continue
-          newCount++
-          queuedIds.add(item.id)  // prevent dupes within this check too
-          // queue the download; mark seen when it completes (via onFinished)
-          queue.add(item.url, p.quality, { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
-            outDir,
-            prospectId: p.id,
-            prospectItemId: item.id
-          })
-          queuedCount++
+          if (newCount < maxNew) {
+            newCount++
+            queuedIds.add(item.id)  // prevent dupes within this check too
+            // queue the download; mark seen when it completes (via onFinished)
+            queue.add(item.url, p.quality, { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
+              outDir,
+              prospectId: p.id,
+              prospectItemId: item.id
+            })
+            queuedCount++
+          } else if (isFirstCheck) {
+            // First check: establish baseline — mark older history as seen
+            // so future checks only pick up truly NEW content.
+            seen.mark(p.id, item.id)
+          }
         }
       } catch (e) {
         // one bad link must not kill the whole prospect — record and continue
