@@ -625,8 +625,12 @@ export class ProspectScheduler {
         const items = await listWithFallback(tools, link.url, link.platform, Math.max(maxNew, 30), cookiesFile, proxyUrl)
 
         for (const item of items) {
-          if (seen.has(p.id, item.id)) continue
-          if (queuedIds.has(item.id)) continue
+          const alreadySeen = seen.has(p.id, item.id)
+          const alreadyQueued = queuedIds.has(item.id)
+          if (alreadySeen || alreadyQueued) {
+            if (alreadySeen) log(`skip (seen): ${item.id}`)
+            continue
+          }
           // Instagram pinned posts: skip download (they're always on top),
           // but mark as seen so they're not re-scanned every time.
           if (item.isPinned) {
