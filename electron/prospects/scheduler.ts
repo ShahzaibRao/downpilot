@@ -133,7 +133,9 @@ export async function listSnapchat(
   // TODO: proxy support for fetch (Node 18+ has fetch, but proxy needs agent)
   // For now, direct fetch; proxy support can be added via https-proxy-agent.
 
-  const res = await fetch(pageUrl, { headers })
+  const res = await fetch(pageUrl, { headers }).catch((e) => {
+    throw new Error(`fetch failed: ${(e as Error).message} (cause: ${(e as any).cause?.message || 'unknown'})`)
+  })
   if (!res.ok) throw new Error(`Snapchat page HTTP ${res.status}`)
   const html = await res.text()
 
@@ -350,6 +352,7 @@ export async function listWithFallback(
 ): Promise<ProspectItem[]> {
   // Snapchat: use __NEXT_DATA__ directly (CreatorWatch approach).
   // gallery-dl's extractor is outdated, yt-dlp returns wrong content.
+  // If __NEXT_DATA__ fails, fall back to gallery-dl then yt-dlp.
   if (platform === 'snapchat') {
     log(`listing ${platform} via __NEXT_DATA__: ${url}`)
     try {
@@ -358,7 +361,28 @@ export async function listWithFallback(
       return items
     } catch (e) {
       logExecFailure('snapchat __NEXT_DATA__', e)
-      throw new Error(`${platform}: ${(e as Error).message}`)
+      const nextDataErr = e as Error
+      // Fallback: gallery-dl then yt-dlp
+      log(`snapchat __NEXT_DATA__ failed, trying gallery-dl fallback...`)
+      if (tools.gallerydl) {
+        try {
+          const items = await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
+          log(`gallery-dl OK: ${items.length} items`)
+          return items
+        } catch (e2) {
+          logExecFailure('gallery-dl', e2)
+        }
+      }
+      if (tools.ytdlp) {
+        try {
+          const items = await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
+          log(`yt-dlp OK: ${items.length} items`)
+          return items
+        } catch (e3) {
+          logExecFailure('yt-dlp', e3)
+        }
+      }
+      throw new Error(`${platform}: __NEXT_DATA__: ${cleanError(nextDataErr.message)} (gallery-dl/yt-dlp fallbacks also failed)`)
     }
   }
 
