@@ -140,6 +140,7 @@ const speedHist = ref<number[]>(new Array(30).fill(0))
 
 let unsubQueue: (() => void) | null = null
 let refreshTimer: any = null
+let speedTimer: any = null
 
 const PLAT_COLORS: Record<string, string> = {
   youtube: '#2f6fed', tiktok: '#22c55e', instagram: '#f59e0b',
@@ -239,19 +240,31 @@ async function retryFailed() {
 onMounted(() => {
   load()
   refreshTimer = setInterval(load, 30000)
+  // Poll queue for live speed (fallback if queue:update events are missed)
+  speedTimer = setInterval(async () => {
+    try {
+      const tasks = await (window as any).dpApi?.queueList?.() || []
+      updateSpeed(tasks)
+    } catch { /* ignore */ }
+  }, 1000)
   unsubQueue = (window as any).dpApi?.onQueueUpdate?.((tasks: any[]) => {
-    let total = 0
-    for (const t of tasks) {
-      if (t.status === 'running') total += parseSpeed(t.speed)
-    }
-    currentSpeed.value = total
-    if (total > topSpeed.value) topSpeed.value = total
-    speedHist.value = [...speedHist.value.slice(1), total]
+    updateSpeed(tasks)
   })
 })
 
+function updateSpeed(tasks: any[]) {
+  let total = 0
+  for (const t of tasks) {
+    if (t.status === 'running' || t.status === 'downloading') total += parseSpeed(t.speed)
+  }
+  currentSpeed.value = total
+  if (total > topSpeed.value) topSpeed.value = total
+  speedHist.value = [...speedHist.value.slice(1), total]
+}
+
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
+  if (speedTimer) clearInterval(speedTimer)
   unsubQueue?.()
 })
 </script>
