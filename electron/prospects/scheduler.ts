@@ -230,8 +230,9 @@ export async function listItemsGalleryDl(
   let printFmt: string
   let targetUrl = url
   if (platform === 'instagram') {
-    // Include pinned status — pinned posts must be skipped (they're always on top)
-    printFmt = '{shortcode} :: {post_url} :: {caption} :: {pinned}'
+    // Try multiple possible pinned field names; log raw for debugging.
+    // Instagram allows max 3 pinned posts, always at the top.
+    printFmt = '{shortcode} :: {post_url} :: {caption} :: {pinned} :: {is_pinned}'
     targetUrl = url.replace(/\/$/, '') + '/'  // trailing slash needed
   } else if (platform === 'x') {
     printFmt = '{tweet_id} :: {content}'
@@ -278,19 +279,26 @@ export async function listItemsGalleryDl(
 }
 
 /** Parse one --print line into a ProspectItem. */
+let _pinDebugLogged = false
 export function parseGalleryPrint(parts: string[], platform: string, username: string): ProspectItem | null {
   if (platform === 'instagram') {
-    // "{shortcode} :: {post_url} :: {caption} :: {pinned}"
-    const [shortcode, postUrl, caption, pinned] = parts
+    // "{shortcode} :: {post_url} :: {caption} :: {pinned} :: {is_pinned}"
+    const [shortcode, postUrl, caption, pinned, isPinned] = parts
     if (!shortcode?.trim() || !postUrl?.trim().startsWith('http')) return null
     // Skip pinned posts — they're always on top, would block real latest posts.
-    // Mark as seen (via isPinned flag) so they're not re-scanned.
-    const isPinned = /^(true|1|yes)$/i.test((pinned || '').trim())
+    // Try multiple field names; gallery-dl version differences.
+    const pinVal = (pinned || '').trim() + '|' + (isPinned || '').trim()
+    const isPin = /^(true|1|yes)/i.test(pinVal)
+    // Debug: log the raw pinned values for first item
+    if (!_pinDebugLogged) {
+      _pinDebugLogged = true
+      console.log(`[prospect] IG pinned debug: pinned="${pinned}" is_pinned="${isPinned}" → isPin=${isPin}`)
+    }
     return {
       id: `ig_${shortcode.trim()}`,
       title: (caption?.trim() || shortcode.trim()).slice(0, 100),
       url: postUrl.trim(),
-      isPinned
+      isPinned: isPin
     }
   }
   if (platform === 'x') {
