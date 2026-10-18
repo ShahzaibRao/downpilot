@@ -31,7 +31,6 @@ const MAX_NOTIFICATIONS = 50
  */
 export class NotificationStore {
   private items: AppNotification[] = []
-  private saveTimer: NodeJS.Timeout | null = null
 
   constructor() {
     this.load()
@@ -100,16 +99,13 @@ export class NotificationStore {
   }
 
   private save(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      try {
-        const file = notifyFile()
-        const tmp = file + '.tmp'
-        fs.writeFileSync(tmp, JSON.stringify(this.items, null, 2))
-        fs.renameSync(tmp, file)
-      } catch {
-        /* ignore */
-      }
-    }, 200)
+    try {
+      const file = notifyFile()
+      const tmp = file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(this.items, null, 2))
+      fs.renameSync(tmp, file)
+    } catch (e) {
+      console.error(`[notify] save failed: ${(e as Error).message}`)
+    }
   }
 }
