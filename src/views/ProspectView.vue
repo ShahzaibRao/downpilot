@@ -115,18 +115,28 @@
       <div class="preview" style="margin-top: 8px;">
         <div v-for="l in p.links" :key="l.id" class="preview-row">
           <span class="badge">{{ l.platform }}</span>
+          <!-- Per-link status (Rao 2026-10-18) -->
+          <span v-if="l.linkStatus === 'ok'" class="badge ok" title="Last check OK">✓</span>
+          <span v-else-if="l.linkStatus === 'error'" class="badge err" :title="l.linkLastError || 'Error'">✗ ({{ l.linkFailCount }}/3)</span>
+          <span v-else-if="l.linkStatus === 'paused'" class="badge err" :title="(l.linkLastError || 'Paused') + ' — click to resume'">⏸ paused</span>
+          <button v-if="l.linkStatus === 'paused'" class="btn small secondary" @click="unpauseLink(p.id, l.id)" title="Resume this link">Resume</button>
           <template v-if="editingLinkId === l.id">
             <input v-model="editLinkUrl" class="url-input" style="font-size: 12px;" />
             <button class="btn small" @click="saveLink(p.id, l.id)">Save</button>
             <button class="btn secondary small" @click="editingLinkId = null">Cancel</button>
           </template>
           <template v-else>
-            <span class="muted" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;">{{ l.url }}</span>
+            <span class="muted" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;" :title="l.linkLastError || l.url">{{ l.url }}</span>
             <span class="spacer"></span>
             <button v-if="editingId === p.id" class="btn secondary small" @click="startEditLink(l)">Edit</button>
             <button v-if="p.links.length > 1" class="btn secondary small" @click="removeLink(p.id, l.id)">✕</button>
           </template>
         </div>
+        <template v-for="l in p.links" :key="'err-'+l.id">
+          <div v-if="l.linkLastError && l.linkStatus !== 'ok'" class="preview-row">
+            <span class="muted" style="font-size: 11px; color: #ff9a9a;">{{ l.platform }}: {{ l.linkLastError }}</span>
+          </div>
+        </template>
         <div class="preview-row">
           <input v-model="linkInputs[p.id]" class="url-input" style="font-size: 12px;" placeholder="Add another platform link for this creator…" />
           <button class="btn secondary small" :disabled="!linkInputs[p.id]?.trim()" @click="addLink(p.id)">Add link</button>
@@ -275,6 +285,11 @@ async function setStatus(id: string, status: string) {
 
 async function unpause(id: string) {
   await window.dpApi.prospectsUnpause(id)
+  await load()
+}
+
+async function unpauseLink(prospectId: string, linkId: string) {
+  await window.dpApi.prospectsUnpauseLink(prospectId, linkId)
   await load()
 }
 
