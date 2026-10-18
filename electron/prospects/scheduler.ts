@@ -244,6 +244,11 @@ export async function listItemsGalleryDl(
   } else if (platform === 'x') {
     // Include date for chronological sorting (CreatorWatch format)
     printFmt = '{tweet_id} :: {date} :: {content}'
+    // Use /media tab — shows ONLY posts with images/videos, in chronological order.
+    // (Profile URL includes text-only tweets which we don't want.)
+    const mediaUrl = url.replace(/\/$/, '') + '/media'
+    targetUrl = mediaUrl
+    log(`x: using media tab: ${mediaUrl}`)
   } else if (platform === 'tiktok') {
     printFmt = '{id} :: {title}'
   } else if (platform === 'snapchat') {
