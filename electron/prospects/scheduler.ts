@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import fs from 'node:fs'
 import path from 'node:path'
 import type { Prospect } from './store'
 import type { ProspectStore } from './store'
@@ -93,10 +94,116 @@ export async function listItems(
 }
 
 /**
- * Fallback listing via gallery-dl (Phase 1b rule: yt-dlp → gallery-dl → error).
- * Uses --print with extractor-specific formats (CreatorWatch approach —
- * much more reliable than --dump-json parsing).
+ * Snapchat listing via __NEXT_DATA__ (CreatorWatch approach).
+ * gallery-dl's Snapchat extractor is outdated; yt-dlp gives wrong content.
+ * We fetch the profile page and parse stories + spotlight directly,
+ * returning DIRECT media URLs (cf-st.sc-cdn.net) for download.
  */
+export async function listSnapchat(
+  url: string,
+  limit: number,
+  cookiesFile?: string | null,
+  proxyUrl?: string | null
+): Promise<ProspectItem[]> {
+  const m = url.match(/snapchat\.com\/(?:@|add\/)([^/?#]+)/i)
+  if (!m) throw new Error(`Snapchat URL samajh nahi aayi: ${url}`)
+  const user = m[1]
+  const pageUrl = `https://www.snapchat.com/@${user}`
+
+  log(`listing snapchat via __NEXT_DATA__: ${pageUrl}`)
+
+  // Build fetch options with cookies if available
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+    'Referer': 'https://www.snapchat.com/',
+  }
+  if (cookiesFile) {
+    try {
+      const cookieStr = fs.readFileSync(cookiesFile, 'utf8')
+      const cookies: string[] = []
+      for (const line of cookieStr.split('\n')) {
+        if (!line.trim() || line.startsWith('#')) continue
+        const parts = line.split('\t')
+        if (parts.length >= 7) cookies.push(`${parts[5]}=${parts[6]}`)
+      }
+      if (cookies.length) headers['Cookie'] = cookies.join('; ')
+    } catch { /* ignore cookie read errors */ }
+  }
+
+  // TODO: proxy support for fetch (Node 18+ has fetch, but proxy needs agent)
+  // For now, direct fetch; proxy support can be added via https-proxy-agent.
+
+  const res = await fetch(pageUrl, { headers })
+  if (!res.ok) throw new Error(`Snapchat page HTTP ${res.status}`)
+  const html = await res.text()
+
+  const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s)
+  if (!nextDataMatch) throw new Error('Snapchat page ka data nahi mila — structure badal gayi?')
+
+  let pp: any
+  try {
+    pp = JSON.parse(nextDataMatch[1]).props.pageProps
+  } catch (e) {
+    throw new Error(`Snapchat JSON parse fail: ${(e as Error).message}`)
+  }
+
+  const val = (x: any) => (x && typeof x === 'object' ? (x.value ?? x) : x)
+  const items: ProspectItem[] = []
+  const seen = new Set<string>()
+
+  const addSnap = (snap: any, prefix: string) => {
+    const urls = snap.snapUrls || {}
+    const media = urls.mediaUrl
+    if (!media || seen.has(media)) return
+    seen.add(media)
+    const sid = String(val(snap.snapId) || '').slice(0, 60) || media.slice(-30)
+    const title = String(val(snap.snapTitle) || '').slice(0, 80) || sid
+    items.push({
+      id: `sc_${sid}`,
+      title: `${prefix}: ${title}`.slice(0, 100),
+      url: media  // DIRECT CDN URL — download via yt-dlp as generic file
+    })
+  }
+
+  // 1. Active Story (24h) — first!
+  const story = pp.story
+  if (story && typeof story === 'object') {
+    for (const snap of story.snapList || []) {
+      addSnap(snap, 'Story')
+      if (items.length >= limit) break
+    }
+  }
+
+  // 2. Spotlight + Curated Highlights
+  for (const key of ['spotlightHighlights', 'curatedHighlights']) {
+    for (const hl of pp[key] || []) {
+      const hlTitle = String(val(hl.storyTitle) || '').slice(0, 40)
+      for (const snap of hl.snapList || []) {
+        const urls = snap.snapUrls || {}
+        const media = urls.mediaUrl
+        if (!media || seen.has(media)) continue
+        seen.add(media)
+        const sid = String(val(snap.snapId) || '').slice(0, 60) || media.slice(-30)
+        const title = String(val(snap.snapTitle) || hlTitle || '').slice(0, 80) || sid
+        items.push({
+          id: `sc_${sid}`,
+          title: (key === 'spotlightHighlights' ? 'Spotlight' : 'Highlight') + `: ${title}`.slice(0, 100),
+          url: media
+        })
+        if (items.length >= limit) break
+      }
+      if (items.length >= limit) break
+    }
+    if (items.length >= limit) break
+  }
+
+  if (items.length === 0) {
+    throw new Error(`@${user}: Snapchat web par koi public content nahi — shayad app-only hai`)
+  }
+
+  log(`snapchat __NEXT_DATA__: ${items.length} items (stories + spotlight)`)
+  return items
+}
 export async function listItemsGalleryDl(
   gdlPath: string,
   url: string,
@@ -241,9 +348,23 @@ export async function listWithFallback(
   cookiesFile?: string | null,
   proxyUrl?: string | null
 ): Promise<ProspectItem[]> {
-  // Gallery-dl has better extractors for these platforms (CreatorWatch approach).
-  // Try it FIRST for snapchat/instagram/x; yt-dlp first for others.
-  const gdlFirst = platform === 'snapchat' || platform === 'instagram' || platform === 'x'
+  // Snapchat: use __NEXT_DATA__ directly (CreatorWatch approach).
+  // gallery-dl's extractor is outdated, yt-dlp returns wrong content.
+  if (platform === 'snapchat') {
+    log(`listing ${platform} via __NEXT_DATA__: ${url}`)
+    try {
+      const items = await listSnapchat(url, limit, cookiesFile, proxyUrl)
+      log(`snapchat OK: ${items.length} items`)
+      return items
+    } catch (e) {
+      logExecFailure('snapchat __NEXT_DATA__', e)
+      throw new Error(`${platform}: ${(e as Error).message}`)
+    }
+  }
+
+  // Gallery-dl has better extractors for instagram/x (CreatorWatch approach).
+  // Try it FIRST for those; yt-dlp first for others.
+  const gdlFirst = platform === 'instagram' || platform === 'x'
 
   const tryYtDlp = async (): Promise<ProspectItem[]> => {
     if (!tools.ytdlp) throw new Error('yt-dlp not available')
