@@ -500,8 +500,79 @@ export class DownloadJob {
   ) {}
 
   start(): void {
+    // Direct CDN URLs (e.g. Snapchat cf-st.sc-cdn.net from __NEXT_DATA__):
+    // download via plain HTTP — yt-dlp chokes on the signed URL's fake extension.
+    if (/cf-st\.sc-cdn\.net/i.test(this.url)) {
+      void this.downloadDirect()
+      return
+    }
     const route = routeUrl(this.url)
     this.tryEngine(route.primary, () => this.tryEngine(route.secondary, () => this.failAll()))
+  }
+
+  /** Direct HTTP download for CDN URLs (Snapchat stories/spotlight). */
+  private async downloadDirect(): Promise<void> {
+    const { execFile: ef } = await import('node:child_process')
+    const { promisify: pm } = await import('node:util')
+    const execFileAsync = pm(ef)
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    this.onEvent({ ...blankEvent(this.id), engine: 'direct', status: 'downloading', percent: 0 })
+
+    // Probe Content-Type via curl HEAD to pick extension.
+    // Snapchat stories are often IMAGES (not video)!
+    let ext = 'mp4'
+    try {
+      const proxyUrl = this.proxy?.getProxyUrl(this.url)
+      const headArgs = ['-sI', '--max-time', '15', this.url]
+      if (proxyUrl) headArgs.splice(1, 0, '-x', proxyUrl)
+      const { stdout } = await execFileAsync('curl', headArgs, { timeout: 20000, windowsHide: true })
+      const ct = (stdout.match(/content-type:\s*([^\r\n]+)/i) || [])[1]?.trim().toLowerCase() || ''
+      console.log(`[direct] Content-Type for ${this.url.slice(0, 60)}...: ${ct}`)
+      if (ct.includes('jpeg') || ct.includes('jpg')) ext = 'jpg'
+      else if (ct.includes('png')) ext = 'png'
+      else if (ct.includes('webp')) ext = 'webp'
+      else if (ct.includes('gif')) ext = 'gif'
+      else if (ct.includes('mp4')) ext = 'mp4'
+      else if (ct.includes('quicktime')) ext = 'mov'
+    } catch (e) {
+      console.log(`[direct] HEAD probe failed, defaulting to mp4: ${(e as Error).message}`)
+    }
+
+    // Use task ID for unique filename (Snapchat IDs are stable)
+    const safeId = this.id.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)
+    const filename = `snap_${safeId}.${ext}`
+    const outPath = path.join(this.outDir, filename)
+    try {
+      fs.mkdirSync(this.outDir, { recursive: true })
+    } catch { /* ignore */ }
+
+    const proxyUrl = this.proxy?.getProxyUrl(this.url)
+    const dlArgs = ['-sL', '--max-time', '300', '-o', outPath, this.url]
+    if (proxyUrl) dlArgs.splice(1, 0, '-x', proxyUrl)
+
+    try {
+      await execFileAsync('curl', dlArgs, { timeout: 310000, windowsHide: true, maxBuffer: 2 * 1024 * 1024 * 1024 })
+      const stat = fs.statSync(outPath)
+      console.log(`[direct] downloaded ${filename} (${stat.size} bytes, .${ext})`)
+      this.onEvent({
+        ...blankEvent(this.id),
+        engine: 'direct',
+        status: 'done',
+        percent: 100,
+        filename,
+        downloaded: stat.size,
+        total: stat.size
+      })
+    } catch (e) {
+      this.onEvent({
+        ...blankEvent(this.id),
+        engine: 'direct',
+        status: 'error',
+        error: `direct download failed: ${(e as Error).message}`
+      })
+    }
   }
 
   cancel(): void {
