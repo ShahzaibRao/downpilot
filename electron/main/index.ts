@@ -361,10 +361,10 @@ function getQueue(): QueueManager {
           ...(task.prospectId ? { prospectId: task.prospectId } : {}),
           ...(prospect ? { prospectName: prospect.name } : {})
         })
-        // prospect task completed → mark item as seen (only on success;
-        // failed ones stay unseen so the next check retries them)
-        if (task.prospectId && task.prospectItemId && task.status === 'done') {
-          getSeenStore().mark(task.prospectId, task.prospectItemId)
+        // prospect task: seen was marked at queue time (standing rule: deleted
+        // files never re-download). On failure, unmark so next check retries.
+        if (task.prospectId && task.prospectItemId && task.status !== 'done') {
+          getSeenStore().unmark(task.prospectId, task.prospectItemId)
         }
       },
       {
