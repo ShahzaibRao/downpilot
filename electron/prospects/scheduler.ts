@@ -36,6 +36,8 @@ export interface ProspectItem {
   url: string
   /** Snapchat stories expire in 24h — download ALL, bypass maxNew limit. */
   isStory?: boolean
+  /** Instagram pinned posts — skip download, but mark seen. */
+  isPinned?: boolean
 }
 
 export interface CheckResult {
@@ -228,7 +230,8 @@ export async function listItemsGalleryDl(
   let printFmt: string
   let targetUrl = url
   if (platform === 'instagram') {
-    printFmt = '{shortcode} :: {post_url} :: {caption}'
+    // Include pinned status — pinned posts must be skipped (they're always on top)
+    printFmt = '{shortcode} :: {post_url} :: {caption} :: {pinned}'
     targetUrl = url.replace(/\/$/, '') + '/'  // trailing slash needed
   } else if (platform === 'x') {
     printFmt = '{tweet_id} :: {content}'
@@ -277,13 +280,17 @@ export async function listItemsGalleryDl(
 /** Parse one --print line into a ProspectItem. */
 export function parseGalleryPrint(parts: string[], platform: string, username: string): ProspectItem | null {
   if (platform === 'instagram') {
-    // "{shortcode} :: {post_url} :: {caption}"
-    const [shortcode, postUrl, caption] = parts
+    // "{shortcode} :: {post_url} :: {caption} :: {pinned}"
+    const [shortcode, postUrl, caption, pinned] = parts
     if (!shortcode?.trim() || !postUrl?.trim().startsWith('http')) return null
+    // Skip pinned posts — they're always on top, would block real latest posts.
+    // Mark as seen (via isPinned flag) so they're not re-scanned.
+    const isPinned = /^(true|1|yes)$/i.test((pinned || '').trim())
     return {
       id: `ig_${shortcode.trim()}`,
       title: (caption?.trim() || shortcode.trim()).slice(0, 100),
-      url: postUrl.trim()
+      url: postUrl.trim(),
+      isPinned
     }
   }
   if (platform === 'x') {
@@ -597,6 +604,13 @@ export class ProspectScheduler {
         for (const item of items) {
           if (seen.has(p.id, item.id)) continue
           if (queuedIds.has(item.id)) continue
+          // Instagram pinned posts: skip download (they're always on top),
+          // but mark as seen so they're not re-scanned every time.
+          if (item.isPinned) {
+            log(`skipping pinned post: ${item.id}`)
+            seen.mark(p.id, item.id)
+            continue
+          }
           // Snapchat stories expire in 24h — download ALL, bypass maxNew.
           // Spotlight/highlights follow the normal maxNew limit.
           const isSnapStory = link.platform === 'snapchat' && item.isStory
