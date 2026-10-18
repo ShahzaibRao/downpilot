@@ -268,8 +268,13 @@ export async function listItemsGalleryDl(
     const parts = trimmed.split(' :: ')
     if (parts.length < 2) continue
     const parsed = parseGalleryPrint(parts, platform, username)
-    if (parsed && !seen.has(parsed.id)) {
-      seen.add(parsed.id)
+    if (!parsed) continue
+    // Deduplicate by POST (not by image): a carousel post has multiple images
+    // but is ONE post. Use the post URL as the key — one URL = one queue item.
+    // (gallery-dl downloads all carousel images when given the post URL.)
+    const dedupKey = platform === 'instagram' ? parsed.url : parsed.id
+    if (!seen.has(dedupKey)) {
+      seen.add(dedupKey)
       items.push(parsed)
       if (items.length >= limit) break
     }
@@ -284,7 +289,12 @@ export function parseGalleryPrint(parts: string[], platform: string, username: s
   if (platform === 'instagram') {
     // "{shortcode} :: {post_url} :: {caption} :: {pinned} :: {is_pinned}"
     const [shortcode, postUrl, caption, pinned, isPinned] = parts
-    if (!shortcode?.trim() || !postUrl?.trim().startsWith('http')) return null
+    if (!postUrl?.trim().startsWith('http')) return null
+    // ID is based on POST (not image): extract post ID from URL.
+    // e.g. https://www.instagram.com/p/ABC123/ → ig_ABC123
+    // This ensures one carousel post = one ID, no matter how many images.
+    const urlMatch = postUrl.match(/instagram\.com\/(?:p|reel)\/([^/?#]+)/i)
+    const postId = urlMatch ? urlMatch[1] : (shortcode?.trim() || postUrl.trim())
     // Skip pinned posts — they're always on top, would block real latest posts.
     // Try multiple field names; gallery-dl version differences.
     const pinVal = (pinned || '').trim() + '|' + (isPinned || '').trim()
@@ -295,8 +305,8 @@ export function parseGalleryPrint(parts: string[], platform: string, username: s
       console.log(`[prospect] IG pinned debug: pinned="${pinned}" is_pinned="${isPinned}" → isPin=${isPin}`)
     }
     return {
-      id: `ig_${shortcode.trim()}`,
-      title: (caption?.trim() || shortcode.trim()).slice(0, 100),
+      id: `ig_${postId}`,
+      title: (caption?.trim() || postId).slice(0, 100),
       url: postUrl.trim(),
       isPinned: isPin
     }
