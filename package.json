@@ -4,11 +4,12 @@
     "electron-updater": "^6.8.9",
     "vue": "^3.5.44"
   },
-  "description": "DownPilot \u2014 creator-first download manager (Quick + Prospect modes)",
+  "description": "DownPilot — creator-first download manager (Quick + Prospect modes)",
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitejs/plugin-vue": "^6.0.10",
     "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
     "typescript": "^5.9.2",
     "vite": "^8.3.4",
