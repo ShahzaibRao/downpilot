@@ -169,12 +169,16 @@ let toolPathsCache: ToolPaths | null = null
 /** Resolve tool locations via the sidecar (cached for the session). Missing tools stay undefined. */
 async function toolPaths(): Promise<ToolPaths> {
   if (toolPathsCache) return toolPathsCache
+  console.log('[tools] detecting via sidecar...')
   const { stdout } = await execFileAsync(
     sidecarPath(),
     ['detect', '--managed-dir', managedDir(), '--json'],
     { timeout: 120_000 }
   )
   const results = (JSON.parse(stdout) as { results: Array<{ kind: string; found: boolean; path?: string }> }).results
+  for (const r of results) {
+    console.log(`[tools] ${r.kind}: ${r.found ? r.path : 'NOT FOUND'}`)
+  }
   const byKind = new Map(results.map((r) => [r.kind, r]))
   const pick = (kind: string): string | undefined => {
     const r = byKind.get(kind)
@@ -187,6 +191,8 @@ async function toolPaths(): Promise<ToolPaths> {
     gallerydl: pick('gallery-dl'),
     deno: pick('deno')
   }
+  if (!toolPathsCache.ytdlp) console.error('[tools] WARNING: yt-dlp not found!')
+  if (!toolPathsCache.gallerydl) console.error('[tools] WARNING: gallery-dl not found!')
   return toolPathsCache
 }
 
