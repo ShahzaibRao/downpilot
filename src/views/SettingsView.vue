@@ -229,7 +229,7 @@
           <span v-else-if="updateStatus === 'downloading'" class="badge ok">downloading {{ updatePercent }}%</span>
           <span v-else-if="updateStatus === 'downloaded'" class="badge ok">ready — restart to apply</span>
           <span v-else-if="updateStatus === 'up-to-date'" class="badge">up to date</span>
-          <span v-else-if="updateStatus === 'error'" class="badge err">check failed</span>
+          <span v-else-if="updateStatus === 'error'" class="badge err" :title="updateError">check failed{{ updateError ? ': ' + updateError : '' }}</span>
           <span v-else class="badge">—</span>
         </div>
       </div>
@@ -657,6 +657,7 @@ onMounted(() => {
     updateStatus.value = s.status
     updateVersion.value = s.version || ''
     updatePercent.value = s.percent || 0
+    updateError.value = s.error || ''
   })
 })
 
@@ -671,6 +672,7 @@ const appVersion = ref('')
 const updateStatus = ref('')
 const updateVersion = ref('')
 const updatePercent = ref(0)
+const updateError = ref('')
 let updaterUnsubscribe: (() => void) | null = null
 
 async function loadAppVersion() {
