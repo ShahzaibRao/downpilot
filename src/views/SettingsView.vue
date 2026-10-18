@@ -209,6 +209,34 @@
         </div>
       </div>
     </div>
+
+    <!-- App Updates (Phase 4) -->
+    <div class="card">
+      <h3>App Updates</h3>
+      <p class="muted">
+        DownPilot checks for updates on startup and daily. Updates download in the
+        background — you'll be asked before restarting.
+      </p>
+      <div class="preview">
+        <div class="preview-row">
+          <span>Version</span>
+          <span class="badge">{{ appVersion || '…' }}</span>
+        </div>
+        <div class="preview-row">
+          <span>Status</span>
+          <span v-if="updateStatus === 'checking'" class="badge">checking…</span>
+          <span v-else-if="updateStatus === 'available'" class="badge ok">update available: {{ updateVersion }}</span>
+          <span v-else-if="updateStatus === 'downloading'" class="badge ok">downloading {{ updatePercent }}%</span>
+          <span v-else-if="updateStatus === 'downloaded'" class="badge ok">ready — restart to apply</span>
+          <span v-else-if="updateStatus === 'up-to-date'" class="badge">up to date</span>
+          <span v-else-if="updateStatus === 'error'" class="badge err">check failed</span>
+          <span v-else class="badge">—</span>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <button class="btn secondary" @click="checkUpdates">Check for updates</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -624,12 +652,40 @@ onMounted(() => {
   loadCookies()
   loadSmart()
   loadPotStatus()
+  loadAppVersion()
+  updaterUnsubscribe = (window as any).dpApi?.onUpdaterStatus?.((s: any) => {
+    updateStatus.value = s.status
+    updateVersion.value = s.version || ''
+    updatePercent.value = s.percent || 0
+  })
 })
 
 onUnmounted(() => {
   unsubscribe?.()
   cookiesUnsubscribe?.()
+  updaterUnsubscribe?.()
 })
+
+// ---- App Updates (Phase 4) ----
+const appVersion = ref('')
+const updateStatus = ref('')
+const updateVersion = ref('')
+const updatePercent = ref(0)
+let updaterUnsubscribe: (() => void) | null = null
+
+async function loadAppVersion() {
+  try {
+    appVersion.value = await (window as any).dpApi?.updaterVersion?.() || ''
+  } catch { /* ignore */ }
+}
+async function checkUpdates() {
+  updateStatus.value = 'checking'
+  try {
+    await (window as any).dpApi?.updaterCheck?.()
+  } catch {
+    updateStatus.value = 'error'
+  }
+}
 </script>
 
 <style scoped>
