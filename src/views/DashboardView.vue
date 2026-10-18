@@ -210,12 +210,12 @@ const queuePct = computed(() => {
 })
 
 function parseSpeed(s: string): number {
-  // "8.4 MB/s" → bytes/sec
-  const m = String(s || '').match(/([\d.]+)\s*(B|KB|MB|GB)\/s/i)
+  // "8.4 MB/s", "8.42MiB/s", "1.2 KiB/s" → bytes/sec
+  const m = String(s || '').match(/([\d.]+)\s*([KMGT]?i?B)\/s/i)
   if (!m) return 0
   const v = parseFloat(m[1])
-  const u = m[2].toUpperCase()
-  const mult: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 }
+  let u = m[2].toUpperCase().replace('I', '') // MiB → MB
+  const mult: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024, TB: 1024 * 1024 * 1024 * 1024 }
   return v * (mult[u] || 0)
 }
 
