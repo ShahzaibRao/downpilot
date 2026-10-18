@@ -332,6 +332,30 @@ function getHistory(): HistoryStore {
   return history
 }
 
+// Phase 5: speed tracking (session top + rolling 60s history)
+let sessionTopSpeed = 0
+let speedHistory: number[] = new Array(60).fill(0)
+
+function parseSpeedStr(s: string): number {
+  const m = String(s || '').match(/([\d.]+)\s*([KMGT]?i?B)\/s/i)
+  if (!m) return 0
+  const v = parseFloat(m[1])
+  const u = m[2].toUpperCase().replace('I', '')
+  const mult: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 }
+  return v * (mult[u] || 0)
+}
+
+function trackSpeed(tasks: any[]): void {
+  let total = 0
+  for (const t of tasks) {
+    if (t.status === 'running' || t.status === 'downloading') {
+      total += parseSpeedStr(t.speed)
+    }
+  }
+  if (total > sessionTopSpeed) sessionTopSpeed = total
+  speedHistory = [...speedHistory.slice(1), total]
+}
+
 // Phase 5: persistent dashboard stats (independent of history)
 let statsStore: import('../stats-store').StatsStore | null = null
 function getStatsStore(): import('../stats-store').StatsStore {
@@ -358,6 +382,8 @@ function getQueue(): QueueManager {
       () => toolPaths(),
       () => getSettings().downloadDir,
       (tasks) => {
+        // Phase 5: track speed (session top + rolling history for live graph)
+        trackSpeed(tasks)
         if (mainWindow) mainWindow.webContents.send('queue:update', tasks)
       },
       (task) => {
@@ -479,7 +505,12 @@ ipcMain.handle('history:list', async () => getHistory().list())
 // Phase 5: dashboard stats
 ipcMain.handle('stats:get', async () => {
   const { computeStats } = await import('../stats')
-  return computeStats(getStatsStore(), getHistory(), getQueue(), getProspectStore())
+  const stats = computeStats(getStatsStore(), getHistory(), getQueue(), getProspectStore())
+  // Inject live speed data (tracked in main process)
+  stats.topSpeed = sessionTopSpeed
+  ;(stats as any).speedHistory = speedHistory
+  ;(stats as any).currentSpeed = speedHistory[speedHistory.length - 1] || 0
+  return stats
 })
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
