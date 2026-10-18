@@ -106,5 +106,14 @@ contextBridge.exposeInMainWorld('dpApi', {
   // ---- settings ----
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch),
-  pickDownloadDir: () => ipcRenderer.invoke('dialog:openDir')
+  pickDownloadDir: () => ipcRenderer.invoke('dialog:openDir'),
+
+  // ---- updater (Phase 4) ----
+  updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  updaterVersion: () => ipcRenderer.invoke('updater:version'),
+  onUpdaterStatus: (cb: (status: any) => void) => {
+    const handler = (_event: unknown, status: unknown) => cb(status)
+    ipcRenderer.on('updater:status', handler)
+    return () => ipcRenderer.removeListener('updater:status', handler)
+  }
 })
