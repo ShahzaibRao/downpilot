@@ -87,7 +87,9 @@ function prospectsFile(): string {
  */
 export class ProspectStore {
   private prospects: Prospect[] = []
-  private saveTimer: NodeJS.Timeout | null = null
+  /** true if load() read a valid file (or file didn't exist yet). If load failed
+   *  on an existing file, we refuse to save — never overwrite good data with []. */
+  private loadedOk = false
 
   constructor() {
     this.load()
@@ -243,8 +245,9 @@ export class ProspectStore {
   }
 
   private load(): void {
+    const file = prospectsFile()
     try {
-      const raw = fs.readFileSync(prospectsFile(), 'utf8')
+      const raw = fs.readFileSync(file, 'utf8')
       const arr = JSON.parse(raw)
       if (Array.isArray(arr)) {
         this.prospects = arr
@@ -253,23 +256,39 @@ export class ProspectStore {
           if (!p.quality) p.quality = 'best'
           if (!p.intervalMinutes) p.intervalMinutes = 60
         }
+        this.loadedOk = true
+      } else {
+        console.error(`[prospects] not an array: ${file}`)
       }
-    } catch {
+    } catch (e) {
+      if (fs.existsSync(file)) {
+        // File exists but unreadable — DO NOT wipe it. Keep prospects empty
+        // in memory but refuse to save until user adds something.
+        console.error(`[prospects] load failed (keeping file untouched): ${(e as Error).message}`)
+      } else {
+        // Fresh start — no file yet, safe to save later.
+        this.loadedOk = true
+      }
       this.prospects = []
     }
   }
 
   private save(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      try {
-        const file = prospectsFile()
-        const tmp = file + '.tmp'
-        fs.writeFileSync(tmp, JSON.stringify(this.prospects, null, 2))
-        fs.renameSync(tmp, file)
-      } catch {
-        /* ignore */
-      }
-    }, 200)
+    // Never overwrite a file we failed to load — protects against wipe.
+    if (!this.loadedOk) {
+      console.error('[prospects] refusing to save: initial load failed')
+      return
+    }
+    try {
+      const file = prospectsFile()
+      const tmp = file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(this.prospects, null, 2))
+      fs.renameSync(tmp, file)
+    } catch (e) {
+      console.error(`[prospects] save failed: ${(e as Error).message}`)
+    }
   }
+
+  /** Call on app quit — no-op now (saves are synchronous). Kept for API compat. */
+  flush(): void { /* synchronous saves need no flush */ }
 }
