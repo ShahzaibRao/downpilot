@@ -139,6 +139,7 @@ const topSpeed = ref(0)
 const speedHist = ref<number[]>(new Array(30).fill(0))
 
 let unsubQueue: (() => void) | null = null
+let unsubHistory: (() => void) | null = null
 let refreshTimer: any = null
 let speedTimer: any = null
 
@@ -222,8 +223,8 @@ function parseSpeed(s: string): number {
 
 async function load() {
   try {
-    stats.value = await (window as any).dpApi?.statsGet?.() || stats.value
-    version.value = await (window as any).dpApi?.updaterVersion?.() || ''
+    stats.value = await window.dpApi.statsGet() || stats.value
+    version.value = await window.dpApi.updaterVersion() || ''
   } catch { /* ignore */ }
 }
 
@@ -239,16 +240,20 @@ async function retryFailed() {
 
 onMounted(() => {
   load()
-  refreshTimer = setInterval(load, 30000)
-  // Poll queue for live speed (fallback if queue:update events are missed)
+  refreshTimer = setInterval(load, 10000) // refresh stats every 10s
+  // Poll queue for live speed every 1s
   speedTimer = setInterval(async () => {
     try {
-      const tasks = await (window as any).dpApi?.queueList?.() || []
-      updateSpeed(tasks)
+      const tasks = await window.dpApi.queueList()
+      updateSpeed(tasks as any[])
     } catch { /* ignore */ }
   }, 1000)
-  unsubQueue = (window as any).dpApi?.onQueueUpdate?.((tasks: any[]) => {
+  unsubQueue = window.dpApi.onQueueUpdate((tasks: any[]) => {
     updateSpeed(tasks)
+  })
+  // Refresh stats immediately when a download completes
+  unsubHistory = window.dpApi.onHistoryUpdate(() => {
+    load()
   })
 })
 
@@ -266,6 +271,7 @@ onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
   if (speedTimer) clearInterval(speedTimer)
   unsubQueue?.()
+  unsubHistory?.()
 })
 </script>
 
