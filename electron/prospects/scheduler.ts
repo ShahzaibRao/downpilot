@@ -38,6 +38,8 @@ export interface ProspectItem {
   isStory?: boolean
   /** Instagram pinned posts — skip download, but mark seen. */
   isPinned?: boolean
+  /** X/Twitter: date string for chronological sorting (newest first). */
+  date?: string
 }
 
 export interface CheckResult {
@@ -240,7 +242,8 @@ export async function listItemsGalleryDl(
     const reelsUrl = url.replace(/\/$/, '') + '/reels/'
     if (reelsUrl !== targetUrl) extraUrls.push(reelsUrl)
   } else if (platform === 'x') {
-    printFmt = '{tweet_id} :: {content}'
+    // Include date for chronological sorting (CreatorWatch format)
+    printFmt = '{tweet_id} :: {date} :: {content}'
   } else if (platform === 'tiktok') {
     printFmt = '{id} :: {title}'
   } else if (platform === 'snapchat') {
@@ -329,14 +332,16 @@ export function parseGalleryPrint(parts: string[], platform: string, username: s
     }
   }
   if (platform === 'x') {
-    // "{tweet_id} :: {content}" → use /i/web/status/ (NOT /i/status/!)
-    const [tweetId, content] = parts
+    // "{tweet_id} :: {date} :: {content}" → use /i/web/status/ (NOT /i/status/!)
+    const [tweetId, dateStr, content] = parts
     const tid = tweetId?.trim()
     if (!tid || !/^\d+$/.test(tid)) return null
     return {
       id: `x_${tid}`,
       title: (content?.trim() || tid).slice(0, 100),
-      url: `https://x.com/i/web/status/${tid}`
+      url: `https://x.com/i/web/status/${tid}`,
+      // Store date for chronological sorting (newest first)
+      date: dateStr?.trim() || ''
     }
   }
   if (platform === 'tiktok') {
@@ -640,6 +645,24 @@ export class ProspectScheduler {
         // Phase 1b rule: yt-dlp → gallery-dl → error (catches image posts)
         // For snapchat/instagram/x, gallery-dl is tried first (better extractors).
         const items = await listWithFallback(tools, link.url, link.platform, Math.max(maxNew, 30), cookiesFile, proxyUrl)
+
+        // X/Twitter: sort by date (newest first) — gallery-dl doesn't guarantee
+        // chronological order, and we want the LATEST posts, not random ones.
+        if (link.platform === 'x') {
+          items.sort((a, b) => {
+            const da = a.date || ''
+            const db = b.date || ''
+            // Tweet IDs are chronological (Snowflake) — higher = newer.
+            // Fall back to date string comparison.
+            const ida = a.id.replace('x_', '')
+            const idb = b.id.replace('x_', '')
+            if (/^\d+$/.test(ida) && /^\d+$/.test(idb)) {
+              return idb.localeCompare(ida, undefined, { numeric: true })
+            }
+            return db.localeCompare(da)
+          })
+          log(`x: sorted ${items.length} items by date (newest first)`)
+        }
 
         for (const item of items) {
           const alreadySeen = seen.has(p.id, item.id)
