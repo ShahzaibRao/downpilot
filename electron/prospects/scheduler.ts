@@ -126,18 +126,8 @@ export async function listSnapchat(
     curlArgs.push('-x', proxyUrl)
   }
   if (cookiesFile) {
-    try {
-      const cookieStr = fs.readFileSync(cookiesFile, 'utf8')
-      const cookies: string[] = []
-      for (const line of cookieStr.split('\n')) {
-        if (!line.trim() || line.startsWith('#')) continue
-        const parts = line.split('\t')
-        if (parts.length >= 7) cookies.push(`${parts[5]}=${parts[6]}`)
-      }
-      if (cookies.length) {
-        curlArgs.push('-H', `Cookie: ${cookies.join('; ')}`)
-      }
-    } catch { /* ignore cookie read errors */ }
+    // Let curl read the Netscape cookie file directly (more robust than manual header)
+    curlArgs.push('-b', cookiesFile)
   }
   curlArgs.push(pageUrl)
 
@@ -149,8 +139,9 @@ export async function listSnapchat(
       windowsHide: true
     })
     html = stdout
-  } catch (e) {
-    throw new Error(`curl failed: ${(e as Error).message}`)
+  } catch (e: any) {
+    const stderr = (e.stderr || '').toString().slice(0, 300)
+    throw new Error(`curl failed: ${(e as Error).message}${stderr ? ` | stderr: ${stderr}` : ''}`)
   }
   if (!html || !html.includes('__NEXT_DATA__')) {
     throw new Error('Snapchat page ka data nahi mila — page khali ya structure badal gayi?')
