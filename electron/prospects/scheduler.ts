@@ -638,12 +638,20 @@ export class ProspectScheduler {
       }
     } catch { /* ignore */ }
 
-    let newCount = 0
     let queuedCount = 0
     const linkErrors: string[] = []
+    const linkResults: { linkId: string; platform: string; ok: boolean; error?: string }[] = []
 
     for (const link of p.links) {
-      if (newCount >= maxNew) break
+      // Skip paused links (auto-paused after 3 fails, or manually paused)
+      if (link.linkStatus === 'paused') {
+        log(`"${p.name}": skipping paused link (${link.platform})`)
+        continue
+      }
+      // Per-link limit (Rao 2026-10-18): each platform gets its own quota.
+      // (Old bug: per-prospect limit broke the loop after first link filled it.)
+      let linkNewCount = 0
+      const linkMaxNew = maxNew
       try {
         const cookiesFile = this.deps.getCookiesFile(link.platform)
         const proxyUrl = this.deps.getProxyUrl(link.url)
@@ -686,8 +694,8 @@ export class ProspectScheduler {
           // Snapchat stories expire in 24h — download ALL, bypass maxNew.
           // Spotlight/highlights follow the normal maxNew limit.
           const isSnapStory = link.platform === 'snapchat' && item.isStory
-          if (isSnapStory || newCount < maxNew) {
-            if (!isSnapStory) newCount++
+          if (isSnapStory || linkNewCount < linkMaxNew) {
+            if (!isSnapStory) linkNewCount++
             queuedIds.add(item.id)  // prevent dupes within this check too
             // Mark seen IMMEDIATELY on queue (standing rule: deleted files never
             // re-download). If the download fails, onFinished unmarks it for retry.
@@ -706,16 +714,27 @@ export class ProspectScheduler {
             seen.mark(p.id, item.id)
           }
         }
+        // Link succeeded — record OK status
+        this.deps.getStore().recordLinkCheck(p.id, link.id, true)
+        linkResults.push({ linkId: link.id, platform: link.platform, ok: true })
       } catch (e) {
         // one bad link must not kill the whole prospect — record and continue
-        linkErrors.push(`${link.platform}: ${cleanError((e as Error).message)}`)
+        const errMsg = cleanError((e as Error).message)
+        const fix = suggestFix(errMsg)
+        const fullErr = fix ? `${link.platform}: ${errMsg} → ${fix}` : `${link.platform}: ${errMsg}`
+        linkErrors.push(fullErr)
+        // Per-link fail tracking (3 fails → auto-pause THE LINK)
+        this.deps.getStore().recordLinkCheck(p.id, link.id, false, errMsg)
+        linkResults.push({ linkId: link.id, platform: link.platform, ok: false, error: errMsg })
+        log(`"${p.name}": link ${link.platform} failed: ${errMsg}`)
       }
     }
 
     // OK if at least one link worked; error only if ALL links failed
-    if (linkErrors.length > 0 && newCount === 0 && queuedCount === 0) {
+    const totalNew = linkResults.filter(r => r.ok).length
+    if (linkErrors.length > 0 && queuedCount === 0) {
       // check if any link actually succeeded (vs all failed)
-      const anySucceeded = p.links.length > linkErrors.length
+      const anySucceeded = linkResults.some(r => r.ok)
       if (!anySucceeded) {
         throw new Error(linkErrors.join(' | '))
       }
@@ -724,7 +743,7 @@ export class ProspectScheduler {
     return {
       prospectId: p.id,
       prospectName: p.name,
-      newItems: newCount,
+      newItems: queuedCount,
       queued: queuedCount,
       ...(linkErrors.length > 0 ? { error: linkErrors.join(' | ') } : {})
     }
@@ -737,6 +756,37 @@ export class ProspectScheduler {
  * For gallery-dl (which doesn't use "ERROR:" prefix), keep the last
  * meaningful lines.
  */
+
+/**
+ * Suggest a solution for common listing errors (Rao 2026-10-18).
+ * Shown in UI so user knows what to do (add proxy, add cookies, etc.)
+ */
+export function suggestFix(error: string): string {
+  const e = error.toLowerCase()
+  if (e.includes('secondary user id')) {
+    return 'TikTok API issue. Try: 1) Add TikTok cookies in Settings, 2) Enable Smart Mode proxy for TikTok.'
+  }
+  if (e.includes('enotfound') || e.includes('getaddrinfo') || e.includes('dns')) {
+    return 'DNS/network issue. Try: Enable Smart Mode and add a proxy for this platform.'
+  }
+  if (e.includes('403') || e.includes('forbidden')) {
+    return 'Bot-block (403). Try: 1) Add a proxy in Smart Mode, 2) Add cookies for this platform.'
+  }
+  if (e.includes('login') || e.includes('unauthorized') || e.includes('401')) {
+    return 'Login required. Add cookies for this platform in Settings → Cookie Profiles.'
+  }
+  if (e.includes('unsupported url')) {
+    return 'URL format not supported. Check if the profile URL is correct.'
+  }
+  if (e.includes('private') || e.includes('not found') || e.includes('404')) {
+    return 'Profile not found or private. Check the URL, or add cookies if it\'s private.'
+  }
+  if (e.includes('rate limit') || e.includes('429')) {
+    return 'Rate limited. Wait a bit, or enable Smart Mode proxy.'
+  }
+  return ''
+}
+
 export function cleanError(raw: string): string {
   const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
   // find the last ERROR: line (yt-dlp puts it at the end)
