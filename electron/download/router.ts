@@ -30,6 +30,9 @@ export function isImagePost(rawUrl: string): boolean {
   if (/tiktok\.com\/@[^/]+\/photo\//.test(u)) return true
   // Snapchat stories / spotlight
   if (/snapchat\.com\//.test(u)) return true
+  // X/Twitter: gallery-dl handles both images and videos better than yt-dlp.
+  // (yt-dlp often misses images; gallery-dl gets all media from a tweet.)
+  if (/(x|twitter)\.com\//.test(u)) return true
   return false
 }
 
