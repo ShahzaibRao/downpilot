@@ -581,7 +581,12 @@ export class ProspectScheduler {
     // with history). Subsequent checks use the configured maxNew.
     const isFirstCheck = !p.lastCheck
     if (isFirstCheck) {
-      maxNew = Math.min(maxNew, 3)
+      // Instagram: max 3 pinned posts (always on top, can't detect them),
+      // so use 6 to capture 3 pinned + 3 real latest. Pinned get marked seen
+      // on first check, so they won't re-download.
+      const hasInstagram = p.links.some(l => l.platform === 'instagram')
+      const firstLimit = hasInstagram ? 6 : 3
+      maxNew = Math.min(maxNew, firstLimit)
       log(`"${p.name}": first check — limiting to ${maxNew} latest items`)
     }
     const outDir = path.join(this.deps.getDownloadDir(), 'prospects', p.folder)
