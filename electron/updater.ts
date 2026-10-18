@@ -92,7 +92,7 @@ function setupUpdater(autoUpdater: any): void {
   autoUpdater.on('error', (err: Error) => {
     clearCheckTimeout()
     console.error('[updater] error:', err.message)
-    sendStatus('error', err.message)
+    sendStatus('error', undefined, undefined, err.message)
   })
 
   // Check on startup (after 10s), then daily
@@ -107,13 +107,13 @@ export function checkForUpdates(): void {
   clearCheckTimeout()
   checkTimeout = setTimeout(() => {
     checkTimeout = null
-    sendStatus('error', 'Update check timed out (network issue?)')
+    sendStatus('error', undefined, undefined, 'Update check timed out (network issue?)')
   }, 30000)
   void getUpdater().then((updater) => {
     updater.checkForUpdates().catch((e: Error) => {
       clearCheckTimeout()
       console.error('[updater] check failed:', e.message)
-      sendStatus('error', e.message)
+      sendStatus('error', undefined, undefined, e.message)
     })
   })
 }
@@ -121,9 +121,10 @@ export function checkForUpdates(): void {
 function sendStatus(
   status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error',
   version?: string,
-  percent?: number
+  percent?: number,
+  error?: string
 ): void {
-  mainWindow?.webContents.send('updater:status', { status, version, percent })
+  mainWindow?.webContents.send('updater:status', { status, version, percent, error })
 }
 
 export function stopUpdater(): void {
