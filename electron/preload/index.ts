@@ -116,5 +116,8 @@ contextBridge.exposeInMainWorld('dpApi', {
     const handler = (_event: unknown, status: unknown) => cb(status)
     ipcRenderer.on('updater:status', handler)
     return () => ipcRenderer.removeListener('updater:status', handler)
-  }
+  },
+
+  // ---- stats (Phase 5) ----
+  statsGet: () => ipcRenderer.invoke('stats:get')
 })
