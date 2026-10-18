@@ -1,0 +1,54 @@
+name: Release (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build sidecar (Windows)
+        run: npm run sidecar:build:win
+        shell: pwsh
+
+      - name: Build app
+        run: npm run build
+
+      - name: Build installer
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DownPilot-Setup-*.exe
+            dist/latest.yml
+          draft: False
+          prerelease: False
+          generate_release_notes: True
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
