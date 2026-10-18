@@ -37,6 +37,15 @@ export function initUpdater(window: BrowserWindow): void {
   })
 }
 
+let checkTimeout: NodeJS.Timeout | null = null
+
+function clearCheckTimeout(): void {
+  if (checkTimeout) {
+    clearTimeout(checkTimeout)
+    checkTimeout = null
+  }
+}
+
 function setupUpdater(autoUpdater: any): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -47,11 +56,13 @@ function setupUpdater(autoUpdater: any): void {
   })
 
   autoUpdater.on('update-available', (info: any) => {
+    clearCheckTimeout()
     console.log(`[updater] update available: ${info.version}`)
     sendStatus('available', info.version)
   })
 
   autoUpdater.on('update-not-available', () => {
+    clearCheckTimeout()
     console.log('[updater] up to date')
     sendStatus('up-to-date')
   })
@@ -61,6 +72,7 @@ function setupUpdater(autoUpdater: any): void {
   })
 
   autoUpdater.on('update-downloaded', (info: any) => {
+    clearCheckTimeout()
     console.log(`[updater] downloaded: ${info.version}`)
     sendStatus('downloaded', info.version)
     // Prompt restart (never force)
@@ -78,6 +90,7 @@ function setupUpdater(autoUpdater: any): void {
   })
 
   autoUpdater.on('error', (err: Error) => {
+    clearCheckTimeout()
     console.error('[updater] error:', err.message)
     sendStatus('error', err.message)
   })
@@ -89,9 +102,18 @@ function setupUpdater(autoUpdater: any): void {
 
 export function checkForUpdates(): void {
   if (!app.isPackaged) return
+  sendStatus('checking')
+  // Timeout: if no response in 30s, report error (don't hang on "checking...")
+  clearCheckTimeout()
+  checkTimeout = setTimeout(() => {
+    checkTimeout = null
+    sendStatus('error', 'Update check timed out (network issue?)')
+  }, 30000)
   void getUpdater().then((updater) => {
     updater.checkForUpdates().catch((e: Error) => {
+      clearCheckTimeout()
       console.error('[updater] check failed:', e.message)
+      sendStatus('error', e.message)
     })
   })
 }
