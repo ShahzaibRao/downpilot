@@ -50,6 +50,12 @@ export class SeenStore {
     }
   }
 
+  /** Forget a single item (e.g. download failed → retry next check). */
+  unmark(prospectId: string, itemId: string): void {
+    const k = this.key(prospectId, itemId)
+    if (this.seen.delete(k)) this.save()
+  }
+
   /** Forget all seen items for a prospect (e.g. on prospect delete). */
   clearProspect(prospectId: string): void {
     const prefix = `${prospectId}:`
