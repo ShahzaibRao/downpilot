@@ -332,6 +332,16 @@ function getHistory(): HistoryStore {
   return history
 }
 
+// Phase 5: persistent dashboard stats (independent of history)
+let statsStore: import('../stats-store').StatsStore | null = null
+function getStatsStore(): import('../stats-store').StatsStore {
+  if (!statsStore) {
+    const { StatsStore } = require('../stats-store') as typeof import('../stats-store')
+    statsStore = new StatsStore(app.getPath('userData'))
+  }
+  return statsStore
+}
+
 function getCookieVault(): CookieVault {
   if (!cookieVault) {
     cookieVault = new CookieVault((metas) => {
@@ -377,6 +387,15 @@ function getQueue(): QueueManager {
           completedAt: Date.now(),
           ...(task.prospectId ? { prospectId: task.prospectId } : {}),
           ...(prospect ? { prospectName: prospect.name } : {})
+        })
+        // Phase 5: record to persistent stats store (independent of history)
+        const { platformFromUrl, isImageFile } = require('../stats') as typeof import('../stats')
+        getStatsStore().recordDownload({
+          bytes: downloadedBytes,
+          platform: platformFromUrl(task.url),
+          creatorName: prospect?.name,
+          isImage: isImageFile(task.filename || ''),
+          success: task.status === 'done'
         })
         // prospect task: seen was marked at queue time (standing rule: deleted
         // files never re-download). On failure, unmark so next check retries.
@@ -460,7 +479,7 @@ ipcMain.handle('history:list', async () => getHistory().list())
 // Phase 5: dashboard stats
 ipcMain.handle('stats:get', async () => {
   const { computeStats } = await import('../stats')
-  return computeStats(getHistory(), getQueue(), getProspectStore())
+  return computeStats(getStatsStore(), getHistory(), getQueue(), getProspectStore())
 })
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
