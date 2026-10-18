@@ -381,8 +381,25 @@ export class ProspectScheduler {
     if (!tools.ytdlp && !tools.gallerydl) throw new Error('No download engine found')
     const seen = this.deps.getSeen()
     const queue = this.deps.getQueue()
-    const maxNew = this.deps.getMaxNew()
+    let maxNew = this.deps.getMaxNew()
+    // First check of a new prospect: only grab the latest few (don't flood the queue
+    // with history). Subsequent checks use the configured maxNew.
+    const isFirstCheck = !p.lastCheck
+    if (isFirstCheck) {
+      maxNew = Math.min(maxNew, 3)
+      log(`"${p.name}": first check — limiting to ${maxNew} latest items`)
+    }
     const outDir = path.join(this.deps.getDownloadDir(), 'prospects', p.folder)
+
+    // Items already in the queue (not yet downloaded) — don't queue twice.
+    // (seen is marked on completion, so a re-check before completion would
+    // otherwise duplicate everything.)
+    const queuedIds = new Set<string>()
+    try {
+      for (const t of queue.list()) {
+        if (t.prospectId === p.id && t.prospectItemId) queuedIds.add(t.prospectItemId)
+      }
+    } catch { /* ignore */ }
 
     let newCount = 0
     let queuedCount = 0
@@ -399,7 +416,9 @@ export class ProspectScheduler {
         for (const item of items) {
           if (newCount >= maxNew) break
           if (seen.has(p.id, item.id)) continue
+          if (queuedIds.has(item.id)) continue
           newCount++
+          queuedIds.add(item.id)  // prevent dupes within this check too
           // queue the download; mark seen when it completes (via onFinished)
           queue.add(item.url, p.quality, { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
             outDir,
