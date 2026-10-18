@@ -115,6 +115,8 @@ export async function listItemsGalleryDl(
     printFmt = '{tweet_id} :: {content}'
   } else if (platform === 'tiktok') {
     printFmt = '{id} :: {title}'
+  } else if (platform === 'snapchat') {
+    printFmt = '{id} :: {title} :: {webpage_url} :: {date}'
   } else {
     printFmt = '{id} :: {title} :: {webpage_url}'
   }
@@ -189,6 +191,18 @@ export function parseGalleryPrint(parts: string[], platform: string, username: s
         : `https://www.tiktok.com/video/${vid}`
     }
   }
+  if (platform === 'snapchat') {
+    // "{id} :: {title} :: {webpage_url} :: {date}"
+    const [id, title, pageUrl] = parts
+    const sid = id?.trim()
+    if (!sid) return null
+    const purl = pageUrl?.trim()
+    return {
+      id: `sc_${sid}`,
+      title: (title?.trim() || sid).slice(0, 100),
+      url: purl?.startsWith('http') ? purl : `https://www.snapchat.com/@${username}`
+    }
+  }
   // generic: "{id} :: {title} :: {webpage_url}"
   const [id, title, pageUrl] = parts
   const gid = id?.trim()
@@ -227,32 +241,62 @@ export async function listWithFallback(
   cookiesFile?: string | null,
   proxyUrl?: string | null
 ): Promise<ProspectItem[]> {
-  let ytdlpErr: Error | null = null
-  if (tools.ytdlp) {
+  // Gallery-dl has better extractors for these platforms (CreatorWatch approach).
+  // Try it FIRST for snapchat/instagram/x; yt-dlp first for others.
+  const gdlFirst = platform === 'snapchat' || platform === 'instagram' || platform === 'x'
+
+  const tryYtDlp = async (): Promise<ProspectItem[]> => {
+    if (!tools.ytdlp) throw new Error('yt-dlp not available')
     log(`listing ${platform} via yt-dlp: ${url}`)
+    const items = await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
+    log(`yt-dlp OK: ${items.length} items`)
+    return items
+  }
+
+  const tryGdl = async (): Promise<ProspectItem[]> => {
+    if (!tools.gallerydl) throw new Error('gallery-dl not available')
+    log(`listing ${platform} via gallery-dl: ${url}`)
+    const items = await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
+    log(`gallery-dl OK: ${items.length} items`)
+    return items
+  }
+
+  let firstErr: Error | null = null
+  let secondErr: Error | null = null
+
+  if (gdlFirst) {
     try {
-      const items = await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
-      log(`yt-dlp OK: ${items.length} items`)
-      return items
+      return await tryGdl()
     } catch (e) {
-      ytdlpErr = e as Error
+      firstErr = e as Error
+      logExecFailure('gallery-dl', e)
+    }
+    try {
+      return await tryYtDlp()
+    } catch (e) {
+      secondErr = e as Error
       logExecFailure('yt-dlp', e)
     }
-  }
-  if (tools.gallerydl) {
-    log(`listing ${platform} via gallery-dl: ${url}`)
+  } else {
     try {
-      const items = await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
-      log(`gallery-dl OK: ${items.length} items`)
-      return items
+      return await tryYtDlp()
     } catch (e) {
+      firstErr = e as Error
+      logExecFailure('yt-dlp', e)
+    }
+    try {
+      return await tryGdl()
+    } catch (e) {
+      secondErr = e as Error
       logExecFailure('gallery-dl', e)
-      const gdlMsg = cleanError((e as Error).message)
-      const ytdlpMsg = ytdlpErr ? cleanError(ytdlpErr.message) : 'yt-dlp not available'
-      throw new Error(`${platform}: yt-dlp: ${ytdlpMsg} | gallery-dl: ${gdlMsg}`)
     }
   }
-  throw ytdlpErr ?? new Error('No listing engine available')
+
+  const firstMsg = firstErr ? cleanError(firstErr.message) : 'not available'
+  const secondMsg = secondErr ? cleanError(secondErr.message) : 'not available'
+  const firstLabel = gdlFirst ? 'gallery-dl' : 'yt-dlp'
+  const secondLabel = gdlFirst ? 'yt-dlp' : 'gallery-dl'
+  throw new Error(`${platform}: ${firstLabel}: ${firstMsg} | ${secondLabel}: ${secondMsg}`)
 }
 
 export interface SchedulerDeps {
