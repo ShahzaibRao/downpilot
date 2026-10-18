@@ -16,8 +16,8 @@
         <div class="stat-label">Downloaded</div>
       </div>
       <div class="card stat">
-        <div class="stat-num green">{{ fmtSpeed(currentSpeed) }}</div>
-        <div class="stat-label">Current speed</div>
+        <div class="stat-num">{{ fmtSpeed(stats.topSpeed) }}</div>
+        <div class="stat-label">Top speed</div>
       </div>
       <div class="card stat">
         <div class="stat-num">{{ stats.successRate }}%</div>
@@ -51,7 +51,7 @@
         <path :d="speedArea" fill="url(#spd)"/>
         <path :d="speedLine" fill="none" stroke="#2f6fed" stroke-width="2"/>
       </svg>
-      <div class="muted small">Top this session: {{ fmtSpeed(topSpeed) }}</div>
+      <div class="muted small">Current: {{ fmtSpeed(stats.currentSpeed || 0) }}</div>
     </div>
 
     <div class="grid2">
@@ -127,21 +127,17 @@ const props = defineProps<{ version?: string }>()
 const emit = defineEmits(['goto'])
 
 const stats = ref<any>({
-  totalDownloads: 0, totalBytes: 0, successRate: 100,
+  totalDownloads: 0, totalBytes: 0, successRate: 100, topSpeed: 0,
+  currentSpeed: 0, speedHistory: new Array(60).fill(0),
   byPlatform: [], last7Days: [], topCreators: [],
   videoBytes: 0, imageBytes: 0, recentActivity: [],
   queue: { pending: 0, active: 0, failed: 0, etaSeconds: null },
   prospects: { watching: 0, paused: 0, error: 0 }
 })
 const version = ref('')
-const currentSpeed = ref(0)
-const topSpeed = ref(0)
-const speedHist = ref<number[]>(new Array(30).fill(0))
 
-let unsubQueue: (() => void) | null = null
 let unsubHistory: (() => void) | null = null
 let refreshTimer: any = null
-let speedTimer: any = null
 
 const PLAT_COLORS: Record<string, string> = {
   youtube: '#2f6fed', tiktok: '#22c55e', instagram: '#f59e0b',
@@ -182,11 +178,11 @@ function barH(n: number) {
   return Math.round((n / max) * 100)
 }
 
-// Speed chart path
+// Speed chart path (from backend speedHistory)
 const speedLine = computed(() => {
-  const h = speedHist.value
+  const h = stats.value.speedHistory || new Array(60).fill(0)
   const max = Math.max(1, ...h)
-  const pts = h.map((v, i) => `${(i / (h.length - 1)) * 400},${65 - (v / max) * 60}`)
+  const pts = h.map((v: number, i: number) => `${(i / (h.length - 1)) * 400},${65 - (v / max) * 60}`)
   return 'M' + pts.join(' L')
 })
 const speedArea = computed(() => speedLine.value + ' L400,70 L0,70 Z')
@@ -211,16 +207,6 @@ const queuePct = computed(() => {
   return Math.round((q.active / (total + q.active)) * 100)
 })
 
-function parseSpeed(s: string): number {
-  // "8.4 MB/s", "8.42MiB/s", "1.2 KiB/s" → bytes/sec
-  const m = String(s || '').match(/([\d.]+)\s*([KMGT]?i?B)\/s/i)
-  if (!m) return 0
-  const v = parseFloat(m[1])
-  let u = m[2].toUpperCase().replace('I', '') // MiB → MB
-  const mult: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024, TB: 1024 * 1024 * 1024 * 1024 }
-  return v * (mult[u] || 0)
-}
-
 async function load() {
   try {
     stats.value = await window.dpApi.statsGet() || stats.value
@@ -240,37 +226,15 @@ async function retryFailed() {
 
 onMounted(() => {
   load()
-  refreshTimer = setInterval(load, 10000) // refresh stats every 10s
-  // Poll queue for live speed every 1s
-  speedTimer = setInterval(async () => {
-    try {
-      const tasks = await window.dpApi.queueList()
-      updateSpeed(tasks as any[])
-    } catch { /* ignore */ }
-  }, 1000)
-  unsubQueue = window.dpApi.onQueueUpdate((tasks: any[]) => {
-    updateSpeed(tasks)
-  })
+  refreshTimer = setInterval(load, 2000) // refresh every 2s for live speed graph
   // Refresh stats immediately when a download completes
   unsubHistory = window.dpApi.onHistoryUpdate(() => {
     load()
   })
 })
 
-function updateSpeed(tasks: any[]) {
-  let total = 0
-  for (const t of tasks) {
-    if (t.status === 'running' || t.status === 'downloading') total += parseSpeed(t.speed)
-  }
-  currentSpeed.value = total
-  if (total > topSpeed.value) topSpeed.value = total
-  speedHist.value = [...speedHist.value.slice(1), total]
-}
-
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
-  if (speedTimer) clearInterval(speedTimer)
-  unsubQueue?.()
   unsubHistory?.()
 })
 </script>
