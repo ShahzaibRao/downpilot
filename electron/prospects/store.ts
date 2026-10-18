@@ -282,7 +282,12 @@ export class ProspectStore {
     try {
       const file = prospectsFile()
       const tmp = file + '.tmp'
-      fs.writeFileSync(tmp, JSON.stringify(this.prospects, null, 2))
+      const data = JSON.stringify(this.prospects, null, 2)
+      // Keep one backup of the previous good file (recovery from corruption).
+      try {
+        if (fs.existsSync(file)) fs.copyFileSync(file, file + '.bak')
+      } catch { /* backup best-effort */ }
+      fs.writeFileSync(tmp, data)
       fs.renameSync(tmp, file)
     } catch (e) {
       console.error(`[prospects] save failed: ${(e as Error).message}`)
