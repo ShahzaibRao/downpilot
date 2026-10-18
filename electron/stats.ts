@@ -1,10 +1,12 @@
 /**
  * Dashboard stats aggregator (Phase 5).
- * Computes all dashboard metrics from history, queue, and prospects.
+ * Reads from the persistent StatsStore (NOT history) — clearing
+ * history never wipes dashboard data. Live data (queue) is merged in.
  */
 import type { HistoryStore } from './history'
 import type { QueueManager } from './download/queue'
 import type { ProspectStore } from './prospects/store'
+import type { StatsStore } from './stats-store'
 
 export interface DashboardStats {
   totalDownloads: number
@@ -49,7 +51,7 @@ export function platformFromUrl(url: string): string {
 }
 
 /** Guess if a file is video or image by extension. */
-function isImageFile(filename: string): boolean {
+export function isImageFile(filename: string): boolean {
   return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(filename)
 }
 
@@ -59,72 +61,38 @@ export function getSessionTopSpeed(): number {
 }
 
 export function computeStats(
+  statsStore: StatsStore,
   history: HistoryStore,
   queue: QueueManager,
   prospects: ProspectStore
 ): DashboardStats {
-  const entries = history.list()
-  const done = entries.filter((e) => e.status === 'done')
+  const s = statsStore.get()
 
-  const totalBytes = done.reduce((s, e) => s + (e.downloaded || 0), 0)
-  const failed = entries.filter((e) => e.status === 'failed').length
-  const successRate = entries.length > 0
-    ? Math.round((done.length / entries.length) * 100)
-    : 100
+  const total = s.successCount + s.failCount
+  const successRate = total > 0 ? Math.round((s.successCount / total) * 100) : 100
 
-  // By platform
-  const platMap = new Map<string, { count: number; bytes: number }>()
-  for (const e of done) {
-    const p = platformFromUrl(e.url)
-    const cur = platMap.get(p) || { count: 0, bytes: 0 }
-    cur.count++
-    cur.bytes += e.downloaded || 0
-    platMap.set(p, cur)
-  }
-  const byPlatform = [...platMap.entries()]
+  const byPlatform = Object.entries(s.byPlatform)
     .map(([platform, v]) => ({ platform, ...v }))
     .sort((a, b) => b.count - a.count)
 
-  // Last 7 days
-  const dayMap = new Map<string, { count: number; bytes: number }>()
+  // Last 7 days (fill gaps with 0)
+  const last7Days: { date: string; count: number; bytes: number }[] = []
   const now = new Date()
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
     const key = d.toISOString().slice(0, 10)
-    dayMap.set(key, { count: 0, bytes: 0 })
+    const day = s.byDay[key] || { count: 0, bytes: 0 }
+    last7Days.push({ date: key, ...day })
   }
-  for (const e of done) {
-    const key = new Date(e.completedAt).toISOString().slice(0, 10)
-    const cur = dayMap.get(key)
-    if (cur) {
-      cur.count++
-      cur.bytes += e.downloaded || 0
-    }
-  }
-  const last7Days = [...dayMap.entries()].map(([date, v]) => ({ date, ...v }))
 
-  // Top creators (prospect downloads)
-  const creatorMap = new Map<string, number>()
-  for (const e of done) {
-    if (e.prospectName) {
-      creatorMap.set(e.prospectName, (creatorMap.get(e.prospectName) || 0) + 1)
-    }
-  }
-  const topCreators = [...creatorMap.entries()]
+  const topCreators = Object.entries(s.byCreator)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
 
-  // Video vs image bytes
-  let videoBytes = 0
-  let imageBytes = 0
-  for (const e of done) {
-    if (isImageFile(e.filename)) imageBytes += e.downloaded || 0
-    else videoBytes += e.downloaded || 0
-  }
-
-  // Recent activity (last 8)
+  // Recent activity still comes from history (it's a feed, not stats)
+  const entries = history.list()
   const recentActivity = entries.slice(0, 8).map((e) => ({
     id: e.id,
     text: e.status === 'done'
@@ -139,11 +107,8 @@ export function computeStats(
   const pending = tasks.filter((t) => t.status === 'queued').length
   const active = tasks.filter((t) => t.status === 'running').length
   const failedQ = tasks.filter((t) => t.status === 'failed').length
-  // Rough ETA: sum remaining bytes / current speed (if any active)
   let etaSeconds: number | null = null
-  const activeTasks = tasks.filter((t) => t.status === 'running')
-  if (activeTasks.length > 0 && pending > 0) {
-    // Very rough: assume average 5 MB/s per task
+  if (active > 0 && pending > 0) {
     etaSeconds = Math.round((pending * 50 * 1024 * 1024) / (5 * 1024 * 1024))
   }
 
@@ -154,15 +119,15 @@ export function computeStats(
   const error = all.filter((p) => p.status === 'error').length
 
   return {
-    totalDownloads: done.length,
-    totalBytes,
+    totalDownloads: s.totalDownloads,
+    totalBytes: s.totalBytes,
     successRate,
     topSpeed: sessionTopSpeed,
     byPlatform,
     last7Days,
     topCreators,
-    videoBytes,
-    imageBytes,
+    videoBytes: s.videoBytes,
+    imageBytes: s.imageBytes,
     recentActivity,
     queue: { pending, active, failed: failedQ, etaSeconds },
     prospects: { watching, paused, error }
