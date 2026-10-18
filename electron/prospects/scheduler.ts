@@ -112,10 +112,16 @@ export async function listSnapchat(
 
   log(`listing snapchat via __NEXT_DATA__: ${pageUrl}`)
 
-  // Build fetch options with cookies if available
-  const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-    'Referer': 'https://www.snapchat.com/',
+  // Use curl (not Node fetch) — handles proxies, DNS, TLS better on Windows.
+  // (Smart Mode proxy support via -x flag.)
+  const curlArgs = [
+    '-sL',           // silent, follow redirects
+    '--max-time', '30',
+    '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+    '-H', 'Referer: https://www.snapchat.com/',
+  ]
+  if (proxyUrl) {
+    curlArgs.push('-x', proxyUrl)
   }
   if (cookiesFile) {
     try {
@@ -126,18 +132,27 @@ export async function listSnapchat(
         const parts = line.split('\t')
         if (parts.length >= 7) cookies.push(`${parts[5]}=${parts[6]}`)
       }
-      if (cookies.length) headers['Cookie'] = cookies.join('; ')
+      if (cookies.length) {
+        curlArgs.push('-H', `Cookie: ${cookies.join('; ')}`)
+      }
     } catch { /* ignore cookie read errors */ }
   }
+  curlArgs.push(pageUrl)
 
-  // TODO: proxy support for fetch (Node 18+ has fetch, but proxy needs agent)
-  // For now, direct fetch; proxy support can be added via https-proxy-agent.
-
-  const res = await fetch(pageUrl, { headers }).catch((e) => {
-    throw new Error(`fetch failed: ${(e as Error).message} (cause: ${(e as any).cause?.message || 'unknown'})`)
-  })
-  if (!res.ok) throw new Error(`Snapchat page HTTP ${res.status}`)
-  const html = await res.text()
+  let html: string
+  try {
+    const { stdout } = await execFileAsync('curl', curlArgs, {
+      timeout: 35000,
+      maxBuffer: 10 * 1024 * 1024,
+      windowsHide: true
+    })
+    html = stdout
+  } catch (e) {
+    throw new Error(`curl failed: ${(e as Error).message}`)
+  }
+  if (!html || !html.includes('__NEXT_DATA__')) {
+    throw new Error('Snapchat page ka data nahi mila — page khali ya structure badal gayi?')
+  }
 
   const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s)
   if (!nextDataMatch) throw new Error('Snapchat page ka data nahi mila — structure badal gayi?')
