@@ -363,10 +363,14 @@ function trackSpeed(tasks: any[]): void {
   if (lastSample && now > lastSample.time) {
     const dt = (now - lastSample.time) / 1000
     const db = totalBytes - lastSample.bytes
-    if (dt > 0 && db >= 0) current = db / dt
+    // Sanity: ignore if bytes went backwards (new task) or spike > 1 GB/s
+    if (dt > 0 && db >= 0) {
+      current = db / dt
+      if (current > 1024 * 1024 * 1024) current = 0 // cap: ignore >1GB/s spikes
+    }
   }
   lastSample = { time: now, bytes: totalBytes }
-  if (current === 0 && ytSpeed > 0) current = ytSpeed
+  if (current === 0 && ytSpeed > 0 && ytSpeed < 1024 * 1024 * 1024) current = ytSpeed
 
   if (current > sessionTopSpeed) sessionTopSpeed = current
   speedHistory = [...speedHistory.slice(1), current]
