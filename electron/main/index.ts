@@ -168,7 +168,15 @@ let toolPathsCache: ToolPaths | null = null
 
 /** Resolve tool locations via the sidecar (cached for the session). Missing tools stay undefined. */
 async function toolPaths(): Promise<ToolPaths> {
-  if (toolPathsCache) return toolPathsCache
+  if (toolPathsCache) {
+    // If cache has neither engine, it was a bad detection — retry.
+    if (!toolPathsCache.ytdlp && !toolPathsCache.gallerydl) {
+      console.log('[tools] cached detection had no engines, retrying...')
+      toolPathsCache = null
+    } else {
+      return toolPathsCache
+    }
+  }
   console.log('[tools] detecting via sidecar...')
   const { stdout } = await execFileAsync(
     sidecarPath(),
