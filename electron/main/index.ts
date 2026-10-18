@@ -333,8 +333,10 @@ function getHistory(): HistoryStore {
 }
 
 // Phase 5: speed tracking (session top + rolling 60s history)
+// Calculates speed from downloaded-bytes delta (more reliable than yt-dlp speed_str)
 let sessionTopSpeed = 0
 let speedHistory: number[] = new Array(60).fill(0)
+let lastSample: { time: number; bytes: number } | null = null
 
 function parseSpeedStr(s: string): number {
   const m = String(s || '').match(/([\d.]+)\s*([KMGT]?i?B)\/s/i)
@@ -346,14 +348,28 @@ function parseSpeedStr(s: string): number {
 }
 
 function trackSpeed(tasks: any[]): void {
-  let total = 0
+  const now = Date.now()
+  let totalBytes = 0
+  let ytSpeed = 0
   for (const t of tasks) {
-    if (t.status === 'running' || t.status === 'downloading') {
-      total += parseSpeedStr(t.speed)
+    if (t.status === 'running') {
+      totalBytes += t.downloaded || 0
+      ytSpeed += parseSpeedStr(t.speed)
     }
   }
-  if (total > sessionTopSpeed) sessionTopSpeed = total
-  speedHistory = [...speedHistory.slice(1), total]
+
+  // Prefer calculated speed from bytes delta; fallback to yt-dlp speed_str
+  let current = 0
+  if (lastSample && now > lastSample.time) {
+    const dt = (now - lastSample.time) / 1000
+    const db = totalBytes - lastSample.bytes
+    if (dt > 0 && db >= 0) current = db / dt
+  }
+  lastSample = { time: now, bytes: totalBytes }
+  if (current === 0 && ytSpeed > 0) current = ytSpeed
+
+  if (current > sessionTopSpeed) sessionTopSpeed = current
+  speedHistory = [...speedHistory.slice(1), current]
 }
 
 // Phase 5: persistent dashboard stats (independent of history)
