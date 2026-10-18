@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, Notification } from 'electron'
+import { initUpdater, checkForUpdates, stopUpdater } from '../updater'
 import { NotificationStore } from '../notifications'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -125,6 +126,8 @@ ipcMain.handle('deps:fetch', async (event, only?: string[]) => {
 
 app.whenReady().then(() => {
   createWindow()
+  // Phase 4: auto-updater (GitHub Releases)
+  if (mainWindow) initUpdater(mainWindow)
   // Phase 3b: start the prospect auto-watch scheduler (60-min cycle).
   try {
     getProspectScheduler().start()
@@ -141,6 +144,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // Phase 4: stop updater interval
+  try { stopUpdater() } catch { /* best-effort */ }
   // Phase 2b: kill the Deno POT server (if running) on app quit.
   try {
     potManager?.stop()
@@ -686,3 +691,10 @@ ipcMain.handle('dialog:openDir', async () => {
   })
   return res.canceled ? null : res.filePaths[0]
 })
+
+// Phase 4: manual update check
+ipcMain.handle('updater:check', async () => {
+  checkForUpdates()
+  return { ok: true }
+})
+ipcMain.handle('updater:version', async () => app.getVersion())
