@@ -464,7 +464,10 @@ export class ProspectScheduler {
           if (newCount < maxNew) {
             newCount++
             queuedIds.add(item.id)  // prevent dupes within this check too
-            // queue the download; mark seen when it completes (via onFinished)
+            // Mark seen IMMEDIATELY on queue (standing rule: deleted files never
+            // re-download). If the download fails, onFinished unmarks it for retry.
+            seen.mark(p.id, item.id)
+            // queue the download
             queue.add(item.url, p.quality, { scope: 'single', maxItems: 50, order: 'latest', content: 'all' }, {
               outDir,
               prospectId: p.id,
