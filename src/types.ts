@@ -245,6 +245,12 @@ export interface DpApi {
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDownloadDir(): Promise<string | null>
+  // updater (Phase 4)
+  updaterCheck(): Promise<{ ok: boolean }>
+  updaterVersion(): Promise<string>
+  onUpdaterStatus(cb: (s: any) => void): () => void
+  // stats (Phase 5)
+  statsGet(): Promise<any>
 }
 
 declare global {
