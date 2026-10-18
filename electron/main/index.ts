@@ -444,6 +444,12 @@ ipcMain.handle('queue:addBulk', async (_event, items: NewTaskInput[]) => {
 // ---- IPC: history (Phase 1d, last 100 finished tasks) ----
 
 ipcMain.handle('history:list', async () => getHistory().list())
+
+// Phase 5: dashboard stats
+ipcMain.handle('stats:get', async () => {
+  const { computeStats } = await import('../stats')
+  return computeStats(getHistory(), getQueue(), getProspectStore())
+})
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
   return true
