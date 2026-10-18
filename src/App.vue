@@ -38,7 +38,8 @@
       </div>
     </div>
     <main class="view">
-      <QuickView v-if="active === 'quick'" />
+      <DashboardView v-if="active === 'dashboard'" @goto="active = $event" />
+      <QuickView v-else-if="active === 'quick'" />
       <ProspectView v-else-if="active === 'prospect'" />
       <HistoryView v-else-if="active === 'history'" />
       <SettingsView v-else />
@@ -50,11 +51,13 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import QuickView from './views/QuickView.vue'
 import ProspectView from './views/ProspectView.vue'
+import DashboardView from './views/DashboardView.vue'
 import HistoryView from './views/HistoryView.vue'
 import SettingsView from './views/SettingsView.vue'
 import type { AppNotification } from './types'
 
 const tabs = [
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'quick', label: 'Quick' },
   { id: 'prospect', label: 'Prospect' },
   { id: 'history', label: 'History' },
@@ -62,7 +65,7 @@ const tabs = [
 ] as const
 
 type TabId = (typeof tabs)[number]['id']
-const active = ref<TabId>('quick')
+const active = ref<TabId>('dashboard')
 
 // notifications (Phase 3c)
 const notifications = ref<AppNotification[]>([])
