@@ -13,7 +13,6 @@ function seenFile(): string {
  */
 export class SeenStore {
   private seen = new Set<string>()
-  private saveTimer: NodeJS.Timeout | null = null
 
   constructor() {
     this.load()
@@ -81,18 +80,15 @@ export class SeenStore {
   }
 
   private save(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      try {
-        const obj: Record<string, 1> = {}
-        for (const k of this.seen) obj[k] = 1
-        const file = seenFile()
-        const tmp = file + '.tmp'
-        fs.writeFileSync(tmp, JSON.stringify(obj))
-        fs.renameSync(tmp, file)
-      } catch {
-        /* ignore */
-      }
-    }, 500)
+    try {
+      const obj: Record<string, 1> = {}
+      for (const k of this.seen) obj[k] = 1
+      const file = seenFile()
+      const tmp = file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(obj))
+      fs.renameSync(tmp, file)
+    } catch (e) {
+      console.error(`[seen] save failed: ${(e as Error).message}`)
+    }
   }
 }
