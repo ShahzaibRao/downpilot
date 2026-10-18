@@ -1,0 +1,91 @@
+/**
+ * Auto-updater via electron-updater + GitHub Releases (Track A).
+ * - Checks on startup (after 10s) + daily
+ * - Downloads in background, prompts restart (never forces mid-download)
+ * - v1 is UNSIGNED — SmartScreen warning expected on fresh install
+ */
+import { app, BrowserWindow, dialog } from 'electron'
+import { autoUpdater } from 'electron-updater'
+
+let mainWindow: BrowserWindow | null = null
+let checkInterval: NodeJS.Timeout | null = null
+
+export function initUpdater(window: BrowserWindow): void {
+  mainWindow = window
+
+  // Only in packaged app (not dev)
+  if (!app.isPackaged) {
+    console.log('[updater] skipped (dev mode)')
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] checking for update...')
+    sendStatus('checking')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] update available: ${info.version}`)
+    sendStatus('available', info.version)
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] up to date')
+    sendStatus('up-to-date')
+  })
+
+  autoUpdater.on('download-progress', (p) => {
+    sendStatus('downloading', undefined, Math.round(p.percent))
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] downloaded: ${info.version}`)
+    sendStatus('downloaded', info.version)
+    // Prompt restart (never force)
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Update ready',
+      message: `DownPilot ${info.version} downloaded. Restart to apply?`,
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0
+    }).then((r) => {
+      if (r.response === 0) {
+        autoUpdater.quitAndInstall(false, true)
+      }
+    })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] error:', err.message)
+    sendStatus('error', err.message)
+  })
+
+  // Check on startup (after 10s), then daily
+  setTimeout(() => checkForUpdates(), 10000)
+  checkInterval = setInterval(() => checkForUpdates(), 24 * 60 * 60 * 1000)
+}
+
+export function checkForUpdates(): void {
+  if (!app.isPackaged) return
+  autoUpdater.checkForUpdates().catch((e) => {
+    console.error('[updater] check failed:', e.message)
+  })
+}
+
+function sendStatus(
+  status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error',
+  version?: string,
+  percent?: number
+): void {
+  mainWindow?.webContents.send('updater:status', { status, version, percent })
+}
+
+export function stopUpdater(): void {
+  if (checkInterval) {
+    clearInterval(checkInterval)
+    checkInterval = null
+  }
+}
