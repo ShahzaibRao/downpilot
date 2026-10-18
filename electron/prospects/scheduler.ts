@@ -34,6 +34,8 @@ export interface ProspectItem {
   id: string
   title: string
   url: string
+  /** Snapchat stories expire in 24h — download ALL, bypass maxNew limit. */
+  isStory?: boolean
 }
 
 export interface CheckResult {
@@ -168,7 +170,7 @@ export async function listSnapchat(
   const items: ProspectItem[] = []
   const seen = new Set<string>()
 
-  const addSnap = (snap: any, prefix: string) => {
+  const addSnap = (snap: any, prefix: string, isStory: boolean) => {
     const urls = snap.snapUrls || {}
     const media = urls.mediaUrl
     if (!media || seen.has(media)) return
@@ -178,15 +180,16 @@ export async function listSnapchat(
     items.push({
       id: `sc_${sid}`,
       title: `${prefix}: ${title}`.slice(0, 100),
-      url: media  // DIRECT CDN URL — download via yt-dlp as generic file
+      url: media,  // DIRECT CDN URL — download via yt-dlp as generic file
+      isStory
     })
   }
 
-  // 1. Active Story (24h) — first!
+  // 1. Active Story (24h) — first! ALL of them (they expire).
   const story = pp.story
   if (story && typeof story === 'object') {
     for (const snap of story.snapList || []) {
-      addSnap(snap, 'Story')
+      addSnap(snap, 'Story', true)
       if (items.length >= limit) break
     }
   }
@@ -205,7 +208,8 @@ export async function listSnapchat(
         items.push({
           id: `sc_${sid}`,
           title: (key === 'spotlightHighlights' ? 'Spotlight' : 'Highlight') + `: ${title}`.slice(0, 100),
-          url: media
+          url: media,
+          isStory: false
         })
         if (items.length >= limit) break
       }
@@ -621,8 +625,11 @@ export class ProspectScheduler {
         for (const item of items) {
           if (seen.has(p.id, item.id)) continue
           if (queuedIds.has(item.id)) continue
-          if (newCount < maxNew) {
-            newCount++
+          // Snapchat stories expire in 24h — download ALL, bypass maxNew.
+          // Spotlight/highlights follow the normal maxNew limit.
+          const isSnapStory = link.platform === 'snapchat' && item.isStory
+          if (isSnapStory || newCount < maxNew) {
+            if (!isSnapStory) newCount++
             queuedIds.add(item.id)  // prevent dupes within this check too
             // Mark seen IMMEDIATELY on queue (standing rule: deleted files never
             // re-download). If the download fails, onFinished unmarks it for retry.
@@ -634,6 +641,7 @@ export class ProspectScheduler {
               prospectItemId: item.id
             })
             queuedCount++
+            if (isSnapStory) log(`snapchat story queued (bypasses limit): ${item.title.slice(0, 40)}`)
           } else if (isFirstCheck) {
             // First check: establish baseline — mark older history as seen
             // so future checks only pick up truly NEW content.
