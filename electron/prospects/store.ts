@@ -9,6 +9,14 @@ export interface ProspectLink {
   id: string
   url: string
   platform: string
+  /** Per-link status (Rao 2026-10-18): track each link independently. */
+  linkStatus?: 'ok' | 'error' | 'paused'
+  /** Consecutive failures; 3 → auto-pause this link (not the prospect). */
+  linkFailCount?: number
+  /** Last error message for this link. */
+  linkLastError?: string | null
+  /** Last successful check timestamp. */
+  linkLastOk?: number | null
 }
 
 export interface Prospect {
@@ -232,6 +240,44 @@ export class ProspectStore {
         p.status = 'error'
       }
     }
+    this.save()
+  }
+
+  /**
+   * Per-link check result (Rao 2026-10-18): track each platform link independently.
+   * 3 consecutive fails → auto-pause THE LINK (not the prospect).
+   */
+  recordLinkCheck(prospectId: string, linkId: string, ok: boolean, error?: string): void {
+    const p = this.get(prospectId)
+    if (!p) return
+    const link = p.links.find(l => l.id === linkId)
+    if (!link) return
+    if (ok) {
+      link.linkStatus = 'ok'
+      link.linkFailCount = 0
+      link.linkLastError = null
+      link.linkLastOk = Date.now()
+    } else {
+      link.linkFailCount = (link.linkFailCount || 0) + 1
+      link.linkLastError = error || 'Check failed'
+      if (link.linkFailCount >= 3) {
+        link.linkStatus = 'paused'
+      } else {
+        link.linkStatus = 'error'
+      }
+    }
+    this.save()
+  }
+
+  /** Manually unpause a link (reset fail count). */
+  unpauseLink(prospectId: string, linkId: string): void {
+    const p = this.get(prospectId)
+    if (!p) return
+    const link = p.links.find(l => l.id === linkId)
+    if (!link) return
+    link.linkStatus = 'ok'
+    link.linkFailCount = 0
+    link.linkLastError = null
     this.save()
   }
 
