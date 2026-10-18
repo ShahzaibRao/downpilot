@@ -133,6 +133,10 @@ export interface ProspectLink {
   id: string
   url: string
   platform: string
+  linkStatus?: 'ok' | 'error' | 'paused'
+  linkFailCount?: number
+  linkLastError?: string | null
+  linkLastOk?: number | null
 }
 
 export interface Prospect {
@@ -221,6 +225,7 @@ export interface DpApi {
   prospectsRename(id: string, name: string): Promise<Prospect>
   prospectsSetStatus(id: string, status: string): Promise<boolean>
   prospectsUnpause(id: string): Promise<boolean>
+  prospectsUnpauseLink(prospectId: string, linkId: string): Promise<boolean>
   prospectsCheckNow(): Promise<CheckResult[]>
   prospectsCheckOne(id: string): Promise<CheckResult | null>
   prospectsUpdateLink(prospectId: string, linkId: string, newUrl: string): Promise<ProspectLink>
