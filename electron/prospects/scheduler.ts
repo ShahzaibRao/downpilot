@@ -229,11 +229,16 @@ export async function listItemsGalleryDl(
   // CreatorWatch formats: shortcode/post_url for IG, tweet_id for X
   let printFmt: string
   let targetUrl = url
+  let extraUrls: string[] = []
   if (platform === 'instagram') {
     // Try multiple possible pinned field names; log raw for debugging.
     // Instagram allows max 3 pinned posts, always at the top.
     printFmt = '{shortcode} :: {post_url} :: {caption} :: {pinned} :: {is_pinned}'
     targetUrl = url.replace(/\/$/, '') + '/'  // trailing slash needed
+    // Also list reels tab — gallery-dl's user extractor may miss reels!
+    // (User wants ALL latest uploads: posts + reels)
+    const reelsUrl = url.replace(/\/$/, '') + '/reels/'
+    if (reelsUrl !== targetUrl) extraUrls.push(reelsUrl)
   } else if (platform === 'x') {
     printFmt = '{tweet_id} :: {content}'
   } else if (platform === 'tiktok') {
@@ -248,16 +253,28 @@ export async function listItemsGalleryDl(
     '--print', printFmt,
     '--range', `1-${limit}`,
     '--no-mtime',
-    targetUrl
   ]
   if (cookiesFile) args.push('--cookies', cookiesFile)
   if (proxyUrl) args.push('--proxy', proxyUrl)
 
-  const { stdout } = await execFileAsync(gdlPath, args, {
-    timeout: 120000,
-    maxBuffer: 10 * 1024 * 1024,
-    windowsHide: true
-  })
+  // Run for target + extra URLs (e.g. IG posts + reels), merge results.
+  const allUrls = [targetUrl, ...extraUrls]
+  let stdout = ''
+  for (const u of allUrls) {
+    try {
+      const { stdout: out } = await execFileAsync(gdlPath, [...args, u], {
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true
+      })
+      stdout += out + '\n'
+      if (u !== targetUrl) log(`gallery-dl extra URL (${u}): got output`)
+    } catch (e) {
+      // Extra URLs (reels tab) may fail — don't break the main listing.
+      if (u === targetUrl) throw e
+      log(`gallery-dl extra URL failed (skipped): ${u} — ${(e as Error).message.slice(0, 100)}`)
+    }
+  }
 
   const username = extractUsername(url)
   const items: ProspectItem[] = []
