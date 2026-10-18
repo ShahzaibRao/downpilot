@@ -309,6 +309,9 @@ export class GalleryDlJob {
     const args = [
       '-d',
       this.opts.outDir,
+      // Flatten directory structure — download directly to outDir,
+      // not instagram/username/ subfolders (prospect folders are already per-creator)
+      '-o', 'directory=',
       '--range',
       `1-${Math.max(1, this.opts.maxItems)}`,
       ...(this.opts.cookiesFile ? ['--cookies', this.opts.cookiesFile] : []),
