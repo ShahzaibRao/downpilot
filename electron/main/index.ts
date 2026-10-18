@@ -353,6 +353,18 @@ function getQueue(): QueueManager {
       (task) => {
         // finished task → history (last 100)
         const prospect = task.prospectId ? getProspectStore().get(task.prospectId) : undefined
+        // Get actual file size from disk (progress events can report 0)
+        let downloadedBytes = task.downloaded || 0
+        if (task.status === 'done' && task.filename && downloadedBytes === 0) {
+          try {
+            const fsMod = require('node:fs') as typeof import('node:fs')
+            const pathMod = require('node:path') as typeof import('node:path')
+            const dir = task.outDir || getSettings().downloadDir
+            const fullPath = pathMod.join(dir, task.filename)
+            const st = fsMod.statSync(fullPath)
+            if (st.isFile()) downloadedBytes = st.size
+          } catch { /* file may not exist, keep 0 */ }
+        }
         getHistory().add({
           id: task.id,
           url: task.url,
@@ -361,7 +373,7 @@ function getQueue(): QueueManager {
           quality: task.quality,
           status: task.status === 'done' ? 'done' : 'failed',
           error: task.error,
-          downloaded: task.downloaded,
+          downloaded: downloadedBytes,
           completedAt: Date.now(),
           ...(task.prospectId ? { prospectId: task.prospectId } : {}),
           ...(prospect ? { prospectName: prospect.name } : {})
