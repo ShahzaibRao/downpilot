@@ -5,7 +5,17 @@
  * - v1 is UNSIGNED — SmartScreen warning expected on fresh install
  */
 import { app, BrowserWindow, dialog } from 'electron'
-import { autoUpdater } from 'electron-updater'
+
+// Lazy-load electron-updater (only in packaged app, not dev)
+// This avoids "Cannot find module" errors in dev mode.
+let autoUpdater: any = null
+async function getUpdater() {
+  if (!autoUpdater) {
+    const mod = await import('electron-updater')
+    autoUpdater = mod.autoUpdater
+  }
+  return autoUpdater
+}
 
 let mainWindow: BrowserWindow | null = null
 let checkInterval: NodeJS.Timeout | null = null
@@ -19,6 +29,15 @@ export function initUpdater(window: BrowserWindow): void {
     return
   }
 
+  // Lazy load in packaged app only
+  void getUpdater().then((updater) => {
+    setupUpdater(updater)
+  }).catch((e) => {
+    console.error('[updater] failed to load:', e.message)
+  })
+}
+
+function setupUpdater(autoUpdater: any): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
@@ -27,7 +46,7 @@ export function initUpdater(window: BrowserWindow): void {
     sendStatus('checking')
   })
 
-  autoUpdater.on('update-available', (info) => {
+  autoUpdater.on('update-available', (info: any) => {
     console.log(`[updater] update available: ${info.version}`)
     sendStatus('available', info.version)
   })
@@ -37,11 +56,11 @@ export function initUpdater(window: BrowserWindow): void {
     sendStatus('up-to-date')
   })
 
-  autoUpdater.on('download-progress', (p) => {
+  autoUpdater.on('download-progress', (p: any) => {
     sendStatus('downloading', undefined, Math.round(p.percent))
   })
 
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', (info: any) => {
     console.log(`[updater] downloaded: ${info.version}`)
     sendStatus('downloaded', info.version)
     // Prompt restart (never force)
@@ -58,7 +77,7 @@ export function initUpdater(window: BrowserWindow): void {
     })
   })
 
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', (err: Error) => {
     console.error('[updater] error:', err.message)
     sendStatus('error', err.message)
   })
@@ -70,8 +89,10 @@ export function initUpdater(window: BrowserWindow): void {
 
 export function checkForUpdates(): void {
   if (!app.isPackaged) return
-  autoUpdater.checkForUpdates().catch((e) => {
-    console.error('[updater] check failed:', e.message)
+  void getUpdater().then((updater) => {
+    updater.checkForUpdates().catch((e: Error) => {
+      console.error('[updater] check failed:', e.message)
+    })
   })
 }
 
