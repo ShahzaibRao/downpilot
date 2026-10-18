@@ -534,6 +534,11 @@ ipcMain.handle('prospects:unpause', async (_event, id: string) => {
   return true
 })
 
+ipcMain.handle('prospects:unpauseLink', async (_event, prospectId: string, linkId: string) => {
+  getProspectStore().unpauseLink(prospectId, linkId)
+  return true
+})
+
 ipcMain.handle('prospects:checkNow', async () => {
   return getProspectScheduler().checkAll()
 })
