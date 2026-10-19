@@ -141,7 +141,7 @@ onUnmounted(() => {
   text-transform: capitalize;
 }
 .filter-btn:hover { color: #e8eaed; }
-.filter-btn.active { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+.filter-btn.active { background: #f97316; border-color: #f97316; color: #fff; }
 .plat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; word-break: break-all; }
 .badge.engine { background: #2a2438; color: #c4b5fd; }
