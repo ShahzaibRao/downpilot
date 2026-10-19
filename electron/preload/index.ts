@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('dpApi', {
   prospectsSetStatus: (id: string, status: string) => ipcRenderer.invoke('prospects:setStatus', id, status),
   prospectsUnpause: (id: string) => ipcRenderer.invoke('prospects:unpause', id),
   prospectsUnpauseLink: (prospectId: string, linkId: string) => ipcRenderer.invoke('prospects:unpauseLink', prospectId, linkId),
+  prospectsOpenFolder: (id: string) => ipcRenderer.invoke('prospects:openFolder', id),
   prospectsCheckNow: () => ipcRenderer.invoke('prospects:checkNow'),
   prospectsCheckOne: (id: string) => ipcRenderer.invoke('prospects:checkOne', id),
   prospectsUpdateLink: (prospectId: string, linkId: string, newUrl: string) => ipcRenderer.invoke('prospects:updateLink', prospectId, linkId, newUrl),
