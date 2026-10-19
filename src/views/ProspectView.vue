@@ -75,6 +75,18 @@
         >
           {{ f }} ({{ statusCounts[f] }})
         </button>
+        <span class="filter-sep"></span>
+        <button
+          v-for="pl in availablePlatforms"
+          :key="pl"
+          class="filter-btn plat-filter"
+          :class="{ active: platformFilter === pl }"
+          :style="platformFilter === pl ? { background: platColor(pl), borderColor: platColor(pl) } : {}"
+          @click="platformFilter = platformFilter === pl ? '' : pl"
+          :title="`Show only ${pl}`"
+        >
+          {{ platIcon(pl) }} {{ pl }}
+        </button>
       </div>
     </div>
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
@@ -198,6 +210,13 @@ import type { Prospect, CheckResult, HistoryEntry, Quality, QueueTask } from '..
 const prospects = ref<Prospect[]>([])
 const search = ref('')
 const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
+const platformFilter = ref('')
+
+const availablePlatforms = computed(() => {
+  const set = new Set<string>()
+  prospects.value.forEach((p) => p.links.forEach((l) => set.add(l.platform)))
+  return Array.from(set).sort()
+})
 
 const statusCounts = computed(() => ({
   all: prospects.value.length,
@@ -211,6 +230,9 @@ const filteredProspects = computed(() => {
   if (statusFilter.value === 'watching') list = list.filter((p) => p.status === 'ok')
   else if (statusFilter.value === 'paused') list = list.filter((p) => p.status === 'paused')
   else if (statusFilter.value === 'error') list = list.filter((p) => p.status === 'error')
+  if (platformFilter.value) {
+    list = list.filter((p) => p.links.some((l) => l.platform === platformFilter.value))
+  }
   const q = search.value.toLowerCase().trim()
   if (!q) return list
   return list.filter((p) =>
@@ -507,6 +529,8 @@ function onQueueUpdate(tasks: QueueTask[]) {
 }
 .filter-btn:hover { color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filter-sep { width: 1px; background: var(--border); margin: 4px 6px; }
+.plat-filter { text-transform: capitalize; }
 @media (max-width: 960px) {
   .pview { padding: 0 4px; }
 }
