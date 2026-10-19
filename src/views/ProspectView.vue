@@ -203,6 +203,11 @@
         <span v-else class="badge err">error</span>
         <span class="muted" style="font-size: 12px;">{{ p.links.length }} link{{ p.links.length === 1 ? '' : 's' }}</span>
         <span v-if="downloadCount(p.name) > 0" class="badge info" :title="`${downloadCount(p.name)} downloads`">📥 {{ downloadCount(p.name) }}</span>
+        <button
+          class="badge folder-btn"
+          @click.stop="openFolder(p.id)"
+          :title="`Open folder: prospects/${p.folder}`"
+        >📁 Open</button>
         <span class="spacer"></span>
         <button class="btn secondary small" :disabled="checkingOne === p.id" @click.stop="checkOne(p.id)">
           {{ checkingOne === p.id ? 'Checking…' : 'Check' }}
@@ -317,6 +322,12 @@ async function loadCreatorStats() {
     if (days.length > 0) {
       todayDownloads.value = days[days.length - 1].count || 0
     }
+  } catch { /* ignore */ }
+}
+
+async function openFolder(id: string) {
+  try {
+    await window.dpApi.prospectsOpenFolder(id)
   } catch { /* ignore */ }
 }
 
@@ -798,6 +809,11 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .stat.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
 .stat.clickable.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
 .health-ring { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; }
+.folder-btn {
+  cursor: pointer; border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text);
+}
+.folder-btn:hover { border-color: var(--accent); background: var(--bg-hover); }
 .header-actions { display: flex; gap: 6px; }
 .check-info { color: var(--text-muted); }
 .check-info strong { color: var(--text); }
