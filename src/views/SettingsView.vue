@@ -23,6 +23,39 @@
     </div>
 
     <div class="card">
+      <h3><span class="sec-icon">🎨</span> Appearance</h3>
+      <p class="muted">Theme</p>
+      <div class="theme-opts">
+        <button
+          v-for="t in ['light', 'dark', 'system']"
+          :key="t"
+          class="theme-btn"
+          :class="{ active: theme === t }"
+          @click="setTheme(t)"
+        >
+          <span class="theme-icon">{{ t === 'light' ? '☀️' : t === 'dark' ? '🌙' : '💻' }}</span>
+          {{ t.charAt(0).toUpperCase() + t.slice(1) }}
+        </button>
+      </div>
+      <p class="muted" style="margin-top: 12px;">Accent color</p>
+      <div class="color-row">
+        <button
+          v-for="c in presetColors"
+          :key="c"
+          class="color-swatch"
+          :style="{ background: c }"
+          :class="{ active: accentColor === c }"
+          @click="setAccent(c)"
+          :title="c"
+        ></button>
+        <label class="color-custom" title="Custom color">
+          <input type="color" v-model="accentColor" @input="setAccent(accentColor)" />
+          <span>+</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
       <h3><span class="sec-icon">🔀</span> Smart Mode <span class="muted" style="font-weight: normal; font-size: 13px;">(proxy)</span></h3>
       <p class="muted">
         Route downloads through your proxy — only for the platforms you check, so proxy
@@ -298,6 +331,21 @@ function onProgress(evt: DepsProgressEvent) {
 const downloadDir = ref('')
 const maxConcurrent = ref(1)
 const maxNewPerCheck = ref(20)
+const theme = ref<'light' | 'dark' | 'system'>('dark')
+const accentColor = ref('#f97316')
+const presetColors = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#eab308', '#06b6d4', '#ef4444']
+
+async function setTheme(t: 'light' | 'dark' | 'system') {
+  theme.value = t
+  await window.dpApi.setSettings({ theme: t })
+  window.dispatchEvent(new CustomEvent('dp:theme'))
+}
+
+async function setAccent(c: string) {
+  accentColor.value = c
+  await window.dpApi.setSettings({ accentColor: c })
+  window.dispatchEvent(new CustomEvent('dp:theme'))
+}
 
 async function loadSettings() {
   try {
@@ -305,6 +353,8 @@ async function loadSettings() {
     downloadDir.value = s.downloadDir
     maxConcurrent.value = s.maxConcurrent
     maxNewPerCheck.value = s.maxNewPerCheck ?? 20
+    theme.value = s.theme || 'dark'
+    accentColor.value = s.accentColor || '#f97316'
   } catch { /* ignore */ }
 }
 
@@ -692,6 +742,32 @@ async function checkUpdates() {
 
 <style scoped>
 .sec-icon { margin-right: 8px; font-size: 18px; }
+.theme-opts { display: flex; gap: 8px; }
+.theme-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--bg-input); border: 2px solid var(--border); color: var(--text);
+  border-radius: 12px; padding: 12px; font-size: 14px; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.theme-btn:hover { border-color: var(--text-muted); }
+.theme-btn.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
+.theme-icon { font-size: 20px; }
+.color-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.color-swatch {
+  width: 36px; height: 36px; border-radius: 50%; border: 3px solid transparent;
+  cursor: pointer; transition: transform 0.15s, border-color 0.15s;
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.active { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+.color-custom {
+  width: 36px; height: 36px; border-radius: 50%; border: 2px dashed var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 20px; color: var(--text-muted);
+  position: relative; overflow: hidden;
+}
+.color-custom input[type="color"] {
+  position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+}
 .row { display: flex; gap: 8px; }
 .url-input {
   flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
