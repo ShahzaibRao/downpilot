@@ -12,6 +12,14 @@
         >
           {{ f }} ({{ counts[f] }})
         </button>
+        <button
+          v-if="hasFinished"
+          class="filter-btn clean-btn"
+          @click="clearDone"
+          title="Clear completed tasks"
+        >
+          🧹
+        </button>
       </div>
     </div>
 
@@ -45,10 +53,6 @@
         <button v-if="task.status !== 'running'" class="btn secondary small" @click="remove(task.id)">✕</button>
       </div>
       <div v-if="task.error" class="badge err" style="margin-top: 8px;">{{ task.error }}</div>
-    </div>
-
-    <div v-if="hasFinished" class="card row" style="justify-content: flex-end;">
-      <button class="btn secondary small" @click="clearDone">Clear completed</button>
     </div>
   </div>
 </template>
@@ -153,6 +157,8 @@ onUnmounted(() => {
 }
 .filter-btn:hover { color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.clean-btn { font-size: 16px; padding: 6px 10px; }
+.clean-btn:hover { border-color: #ef4444; }
 .task-card { transition: border-color 0.2s; }
 .task-card:hover { border-color: #3a3f4a; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
