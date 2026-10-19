@@ -148,6 +148,7 @@
         <span v-else-if="p.status === 'paused'" class="badge">paused</span>
         <span v-else class="badge err">error</span>
         <span class="muted" style="font-size: 12px;">{{ p.links.length }} link{{ p.links.length === 1 ? '' : 's' }}</span>
+        <span v-if="downloadCount(p.name) > 0" class="badge info" :title="`${downloadCount(p.name)} downloads`">📥 {{ downloadCount(p.name) }}</span>
         <span class="spacer"></span>
         <button class="btn secondary small" :disabled="checkingOne === p.id" @click.stop="checkOne(p.id)">
           {{ checkingOne === p.id ? 'Checking…' : 'Check' }}
@@ -240,6 +241,18 @@ const platformFilter = ref('')
 const sortBy = ref('name')
 const expanded = ref<Set<string>>(new Set())
 const selected = ref<Set<string>>(new Set())
+const creatorStats = ref<Record<string, number>>({})
+
+async function loadCreatorStats() {
+  try {
+    const s = await window.dpApi.statsGet()
+    creatorStats.value = s.byCreator || {}
+  } catch { /* ignore */ }
+}
+
+function downloadCount(name: string): number {
+  return creatorStats.value[name] || creatorStats.value['@' + name] || 0
+}
 
 function toggleSelect(id: string) {
   if (selected.value.has(id)) {
@@ -590,6 +603,7 @@ onMounted(() => {
   load()
   loadRecent()
   loadQueue()
+  loadCreatorStats()
   window.dpApi.onProspectsCheckDone(onCheckDone)
   offQueueUpdate = window.dpApi.onQueueUpdate(onQueueUpdate)
 })
