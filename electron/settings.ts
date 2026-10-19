@@ -31,6 +31,10 @@ export interface Settings {
   /** max new items per prospect per check (default 20) */
   maxNewPerCheck: number
   smartMode: SmartModeConfig
+  /** Appearance: light/dark/system */
+  theme: 'light' | 'dark' | 'system'
+  /** Accent color (hex) */
+  accentColor: string
 }
 
 const defaults = (): Settings => ({
@@ -42,7 +46,9 @@ const defaults = (): Settings => ({
     proxies: [],
     selectedProxyIds: [],
     platforms: ['all']
-  }
+  },
+  theme: 'dark',
+  accentColor: '#f97316'
 })
 
 function settingsPath(): string {
