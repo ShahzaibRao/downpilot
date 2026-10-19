@@ -186,6 +186,8 @@ export interface Settings {
   maxConcurrent: number
   maxNewPerCheck: number
   smartMode: SmartModeConfig
+  theme: 'light' | 'dark' | 'system'
+  accentColor: string
 }
 
 /** window.dpApi — exposed by electron/preload/index.ts */
