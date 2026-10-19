@@ -332,8 +332,8 @@ const downloadDir = ref('')
 const maxConcurrent = ref(1)
 const maxNewPerCheck = ref(20)
 const theme = ref<'light' | 'dark' | 'system'>('dark')
-const accentColor = ref('#f97316')
-const presetColors = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#eab308', '#06b6d4', '#ef4444']
+const accentColor = ref('var(--accent)')
+const presetColors = ['var(--accent)', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#eab308', '#06b6d4', '#ef4444']
 
 async function setTheme(t: 'light' | 'dark' | 'system') {
   theme.value = t
@@ -354,7 +354,7 @@ async function loadSettings() {
     maxConcurrent.value = s.maxConcurrent
     maxNewPerCheck.value = s.maxNewPerCheck ?? 20
     theme.value = s.theme || 'dark'
-    accentColor.value = s.accentColor || '#f97316'
+    accentColor.value = s.accentColor || 'var(--accent)'
   } catch { /* ignore */ }
 }
 
@@ -770,13 +770,13 @@ async function checkUpdates() {
 }
 .row { display: flex; gap: 8px; }
 .url-input {
-  flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 10px 12px; font-size: 14px;
 }
-.url-input:focus { outline: none; border-color: #f97316; }
+.url-input:focus { outline: none; border-color: var(--accent); }
 textarea.url-input { width: 100%; resize: vertical; font-family: monospace; font-size: 12px; }
 .quality {
-  background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 10px; font-size: 14px;
 }
 .preview { display: flex; flex-direction: column; gap: 8px; }
@@ -784,5 +784,5 @@ textarea.url-input { width: 100%; resize: vertical; font-family: monospace; font
 .spacer { flex: 1; }
 .btn.small { padding: 4px 12px; font-size: 12px; }
 .chk { display: flex; align-items: center; gap: 4px; cursor: pointer; text-transform: capitalize; }
-code { background: #24282f; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+code { background: var(--bg-input); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 </style>
