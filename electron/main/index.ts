@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, Notification, Menu } from 'electron'
+import * as fs from 'node:fs'
 import { initUpdater, checkForUpdates, stopUpdater } from '../updater'
 import { NotificationStore } from '../notifications'
 import { spawn, execFile } from 'node:child_process'
@@ -627,6 +628,20 @@ ipcMain.handle('prospects:unpause', async (_event, id: string) => {
 ipcMain.handle('prospects:unpauseLink', async (_event, prospectId: string, linkId: string) => {
   getProspectStore().unpauseLink(prospectId, linkId)
   return true
+})
+
+ipcMain.handle('prospects:openFolder', async (_event, id: string) => {
+  const p = getProspectStore().get(id)
+  if (!p) return false
+  const folderPath = path.join(getSettings().downloadDir, 'prospects', p.folder)
+  // Create folder if it doesn't exist, then open
+  try {
+    if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true })
+    await shell.openPath(folderPath)
+    return true
+  } catch {
+    return false
+  }
 })
 
 ipcMain.handle('prospects:checkNow', async () => {
