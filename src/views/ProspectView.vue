@@ -246,7 +246,15 @@ const creatorStats = ref<Record<string, number>>({})
 async function loadCreatorStats() {
   try {
     const s = await window.dpApi.statsGet()
-    creatorStats.value = s.byCreator || {}
+    const map: Record<string, number> = {}
+    // topCreators is [{name, count}] — name may have @ prefix
+    for (const c of (s.topCreators || [])) {
+      map[c.name] = c.count
+      // Also index without @ for matching
+      const clean = c.name.replace(/^@/, '')
+      if (!(clean in map)) map[clean] = c.count
+    }
+    creatorStats.value = map
   } catch { /* ignore */ }
 }
 
