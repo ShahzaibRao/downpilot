@@ -92,18 +92,19 @@
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
       No prospects match.
     </div>
-    <div v-for="p in filteredProspects" :key="p.id" class="card">
-      <div class="row" style="align-items: center;">
+    <div v-for="p in filteredProspects" :key="p.id" class="card prospect-card">
+      <div class="row prospect-head" style="align-items: center; cursor: pointer;" @click="toggleExpand(p.id)">
+        <span class="expand-icon">{{ expanded.has(p.id) ? '▼' : '▶' }}</span>
         <template v-if="editingId === p.id">
-          <input v-model="editName" class="url-input" style="max-width: 180px;" />
-          <select v-model="editQuality" class="url-input" style="max-width: 110px; flex: none;">
+          <input v-model="editName" class="url-input" style="max-width: 180px;" @click.stop />
+          <select v-model="editQuality" class="url-input" style="max-width: 110px; flex: none;" @click.stop>
             <option value="best">Best</option>
             <option value="4k">4K</option>
             <option value="1080p">1080p</option>
             <option value="720p">720p</option>
             <option value="480p">480p</option>
           </select>
-          <select v-model.number="editInterval" class="url-input" style="max-width: 120px; flex: none;">
+          <select v-model.number="editInterval" class="url-input" style="max-width: 120px; flex: none;" @click.stop>
             <option :value="15">15 min</option>
             <option :value="30">30 min</option>
             <option :value="60">60 min</option>
@@ -112,8 +113,8 @@
             <option :value="720">12 hours</option>
             <option :value="1440">24 hours</option>
           </select>
-          <button class="btn small" @click="saveEdit(p.id)">Save</button>
-          <button class="btn secondary small" @click="cancelEdit()">Cancel</button>
+          <button class="btn small" @click.stop="saveEdit(p.id)">Save</button>
+          <button class="btn secondary small" @click.stop="cancelEdit()">Cancel</button>
         </template>
         <template v-else>
           <strong style="font-size: 15px;">{{ p.name }}</strong>
@@ -125,14 +126,15 @@
         <span v-else class="badge err">error</span>
         <span class="muted" style="font-size: 12px;">{{ p.links.length }} link{{ p.links.length === 1 ? '' : 's' }}</span>
         <span class="spacer"></span>
-        <button class="btn secondary small" :disabled="checkingOne === p.id" @click="checkOne(p.id)">
+        <button class="btn secondary small" :disabled="checkingOne === p.id" @click.stop="checkOne(p.id)">
           {{ checkingOne === p.id ? 'Checking…' : 'Check' }}
         </button>
-        <button v-if="editingId !== p.id" class="btn secondary small" @click="startEdit(p)">Edit</button>
-        <button v-if="p.status === 'paused'" class="btn secondary small" @click="unpause(p.id)">Resume</button>
-        <button v-else class="btn secondary small" @click="setStatus(p.id, 'paused')">Pause</button>
-        <button class="btn secondary small" @click="remove(p.id)">Remove</button>
+        <button v-if="editingId !== p.id" class="btn secondary small" @click.stop="startEdit(p)">Edit</button>
+        <button v-if="p.status === 'paused'" class="btn secondary small" @click.stop="unpause(p.id)">Resume</button>
+        <button v-else class="btn secondary small" @click.stop="setStatus(p.id, 'paused')">Pause</button>
+        <button class="btn secondary small" @click.stop="remove(p.id)">Remove</button>
       </div>
+      <div v-if="expanded.has(p.id)" class="prospect-details">
       <div v-if="p.lastError" class="muted" style="font-size: 12px;" :style="{ color: p.lastError.startsWith('Warning:') ? '#fbbf24' : '#f87171' }">{{ p.lastError }}{{ p.failCount > 0 && !p.lastError.startsWith('Warning:') ? ` (${p.failCount}/3)` : '' }}</div>
       <div class="muted" style="font-size: 12px; margin-top: 4px;">
         Folder: prospects/{{ p.folder }}
@@ -181,10 +183,11 @@
           </div>
         </template>
         <div class="preview-row">
-          <input v-model="linkInputs[p.id]" class="url-input" style="font-size: 12px;" placeholder="Add another platform link for this creator…" />
-          <button class="btn secondary small" :disabled="!linkInputs[p.id]?.trim()" @click="addLink(p.id)">Add link</button>
+          <input v-model="linkInputs[p.id]" class="url-input" style="font-size: 12px;" placeholder="Add another platform link for this creator…" @click.stop />
+          <button class="btn secondary small" :disabled="!linkInputs[p.id]?.trim()" @click.stop="addLink(p.id)">Add link</button>
         </div>
       </div>
+      </div><!-- /prospect-details -->
     </div>
     <!-- recent downloads -->
     <div v-if="recentDownloads.length > 0" class="card">
@@ -211,6 +214,15 @@ const prospects = ref<Prospect[]>([])
 const search = ref('')
 const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
 const platformFilter = ref('')
+const expanded = ref<Set<string>>(new Set())
+
+function toggleExpand(id: string) {
+  if (expanded.value.has(id)) {
+    expanded.value.delete(id)
+  } else {
+    expanded.value.add(id)
+  }
+}
 
 const availablePlatforms = computed(() => {
   const set = new Set<string>()
@@ -521,7 +533,14 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .pview { width: 100%; }
-.filters { display: flex; gap: 6px; }
+.prospect-card { transition: border-color 0.2s; }
+.prospect-card:hover { border-color: var(--border); }
+.prospect-head { user-select: none; }
+.prospect-head:hover { background: var(--bg-hover); border-radius: 8px; }
+.expand-icon { color: var(--text-muted); font-size: 12px; width: 16px; }
+.prospect-details { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); animation: expand 0.2s ease-out; }
+@keyframes expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .filter-btn {
   background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted);
   border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer;
