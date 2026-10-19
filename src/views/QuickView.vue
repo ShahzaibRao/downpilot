@@ -3,14 +3,21 @@
     <h2>Quick download</h2>
 
     <div class="card">
-      <div class="row">
-        <input
-          v-model="url"
-          class="url-input"
-          type="url"
-          placeholder="Paste a video link… (YouTube, TikTok, Instagram, …)"
-          @keyup.enter="add"
-        />
+      <div class="row url-row">
+        <div class="url-wrap">
+          <span v-if="detectedPlatform" class="plat-badge" :style="{ background: platColor(detectedPlatform) }">
+            {{ platIcon(detectedPlatform) }} {{ detectedPlatform }}
+          </span>
+          <input
+            v-model="url"
+            class="url-input"
+            type="url"
+            placeholder="Paste a video link… (YouTube, TikTok, Instagram, …)"
+            @keyup.enter="add"
+          />
+          <button v-if="url" class="icon-btn" @click="url = ''" title="Clear">✕</button>
+        </div>
+        <button class="btn secondary" @click="pasteFromClipboard" title="Paste from clipboard">📋</button>
         <select v-model="quality" class="quality">
           <option value="best">Best</option>
           <option value="4k">4K</option>
@@ -138,6 +145,40 @@ let unsubscribe: (() => void) | null = null
 
 const hasFinished = computed(() => tasks.value.some((t) => t.status === 'done' || t.status === 'failed'))
 
+// Platform auto-detection
+const detectedPlatform = computed(() => {
+  const u = url.value.toLowerCase()
+  if (!u) return ''
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube'
+  if (u.includes('tiktok.com')) return 'tiktok'
+  if (u.includes('instagram.com')) return 'instagram'
+  if (u.includes('x.com') || u.includes('twitter.com')) return 'x'
+  if (u.includes('snapchat.com')) return 'snapchat'
+  if (u.includes('pinterest.com')) return 'pinterest'
+  if (u.includes('facebook.com') || u.includes('fb.watch')) return 'facebook'
+  return ''
+})
+
+const PLAT_COLORS: Record<string, string> = {
+  youtube: '#ff0000', tiktok: '#000000', instagram: '#e1306c',
+  x: '#1d9bf0', snapchat: '#fffc00', pinterest: '#bd081c', facebook: '#1877f2'
+}
+const PLAT_ICONS: Record<string, string> = {
+  youtube: '▶', tiktok: '♪', instagram: '📷',
+  x: '𝕏', snapchat: '👻', pinterest: '📌', facebook: 'f'
+}
+function platColor(p: string) { return PLAT_COLORS[p] || '#666' }
+function platIcon(p: string) { return PLAT_ICONS[p] || '🔗' }
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) url.value = text.trim()
+  } catch {
+    error.value = 'Clipboard access denied'
+  }
+}
+
 function currentScopeOpts(): ScopeOpts {
   return {
     scope: scope.value,
@@ -230,6 +271,28 @@ onUnmounted(() => {
 
 <style scoped>
 .row { display: flex; gap: 8px; }
+.url-row { align-items: center; }
+.url-wrap {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  background: #24282f; border: 1px solid #2a2e37; border-radius: 8px;
+  padding: 0 8px 0 12px;
+}
+.url-wrap:focus-within { border-color: #2f6fed; }
+.url-wrap .url-input {
+  flex: 1; background: transparent; border: none; color: #e8eaed;
+  padding: 10px 0; font-size: 14px;
+}
+.url-wrap .url-input:focus { outline: none; }
+.plat-badge {
+  font-size: 11px; font-weight: 700; color: #fff;
+  padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+  text-transform: capitalize;
+}
+.icon-btn {
+  background: transparent; border: none; color: #9aa0aa;
+  font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.icon-btn:hover { color: #e8eaed; background: #2a2e37; }
 .url-input {
   flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
   border-radius: 8px; padding: 10px 12px; font-size: 14px;
