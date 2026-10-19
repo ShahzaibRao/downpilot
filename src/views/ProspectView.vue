@@ -56,7 +56,18 @@
 
     <!-- list -->
     <div v-if="prospects.length === 0" class="card muted">No prospects yet. Add one above to start auto-watching.</div>
-    <div v-for="p in prospects" :key="p.id" class="card">
+    <div v-else class="card" style="margin-bottom: 12px;">
+      <input
+        v-model="search"
+        class="url-input"
+        placeholder="🔍 Search prospects…"
+        style="width: 100%;"
+      />
+    </div>
+    <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
+      No prospects match "{{ search }}".
+    </div>
+    <div v-for="p in filteredProspects" :key="p.id" class="card">
       <div class="row" style="align-items: center;">
         <template v-if="editingId === p.id">
           <input v-model="editName" class="url-input" style="max-width: 180px;" />
@@ -172,6 +183,16 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import type { Prospect, CheckResult, HistoryEntry, Quality, QueueTask } from '../types'
 
 const prospects = ref<Prospect[]>([])
+const search = ref('')
+
+const filteredProspects = computed(() => {
+  const q = search.value.toLowerCase().trim()
+  if (!q) return prospects.value
+  return prospects.value.filter((p) =>
+    p.name.toLowerCase().includes(q) ||
+    p.links.some((l) => l.url.toLowerCase().includes(q))
+  )
+})
 const newUrl = ref('')
 const newName = ref('')
 const newQuality = ref<Quality>('best')
