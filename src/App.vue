@@ -40,6 +40,7 @@
     <main class="view">
       <DashboardView v-if="active === 'dashboard'" @goto="active = $event" />
       <QuickView v-else-if="active === 'quick'" />
+      <QueueView v-else-if="active === 'queue'" />
       <ProspectView v-else-if="active === 'prospect'" />
       <HistoryView v-else-if="active === 'history'" />
       <SettingsView v-else />
@@ -50,6 +51,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import QuickView from './views/QuickView.vue'
+import QueueView from './views/QueueView.vue'
 import ProspectView from './views/ProspectView.vue'
 import DashboardView from './views/DashboardView.vue'
 import HistoryView from './views/HistoryView.vue'
@@ -59,6 +61,7 @@ import type { AppNotification } from './types'
 const tabs = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'quick', label: 'Quick' },
+  { id: 'queue', label: 'Queue' },
   { id: 'prospect', label: 'Prospect' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' }
