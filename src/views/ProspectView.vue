@@ -14,6 +14,21 @@
 
     <!-- dashboard stats -->
     <div v-if="prospects.length > 0" class="stats">
+      <div class="stat health-ring" :title="`${healthPercent}% healthy`">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="26" fill="none" :stroke="'var(--border)'" stroke-width="6" />
+          <circle
+            cx="32" cy="32" r="26" fill="none"
+            :stroke="healthColor" stroke-width="6"
+            stroke-linecap="round"
+            :stroke-dasharray="ringDash(healthPercent)"
+            transform="rotate(-90 32 32)"
+            style="transition: stroke-dasharray 0.5s;"
+          />
+        </svg>
+        <span class="health-text">{{ healthPercent }}%</span>
+        <span class="muted" style="font-size: 11px;">healthy</span>
+      </div>
       <div class="stat clickable" :class="{ active: statusFilter === 'watching' }" @click="statusFilter = statusFilter === 'watching' ? 'all' : 'watching'" title="Filter: watching">
         <span class="stat-num">{{ stats.watching }}</span><span class="muted">watching</span>
       </div>
@@ -462,6 +477,24 @@ const stats = computed(() => ({
   links: prospects.value.reduce((n, p) => n + p.links.length, 0)
 }))
 
+const healthPercent = computed(() => {
+  const total = prospects.value.length
+  if (total === 0) return 100
+  return Math.round((stats.value.watching / total) * 100)
+})
+
+const healthColor = computed(() => {
+  const h = healthPercent.value
+  if (h >= 80) return '#22c55e'
+  if (h >= 50) return '#eab308'
+  return '#ef4444'
+})
+
+function ringDash(percent: number): string {
+  const c = 2 * Math.PI * 26
+  return `${(percent / 100) * c} ${c}`
+}
+
 const recentDownloads = ref<HistoryEntry[]>([])
 
 async function loadRecent() {
@@ -701,6 +734,11 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .stat.clickable { cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
 .stat.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
 .stat.clickable.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
+.health-ring { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; }
+.health-text {
+  position: absolute; top: 22px;
+  font-size: 14px; font-weight: 700;
+}
 .filter-sep { width: 1px; background: var(--border); margin: 4px 6px; }
 .plat-filter { text-transform: capitalize; }
 .sort-select {
