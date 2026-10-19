@@ -49,7 +49,7 @@
       </div>
       <div class="stat"><span class="stat-num">{{ stats.links }}</span><span class="muted">links</span></div>
       <div class="stat" title="Downloads today">
-        <span class="stat-num">📥 {{ todayDownloads }}</span><span class="muted">today</span>
+        <span class="stat-num">{{ todayDownloads }}</span><span class="muted">today</span>
       </div>
     </div>
 
