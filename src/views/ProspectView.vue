@@ -44,6 +44,9 @@
         <span class="stat-num">{{ stats.errors }}</span><span class="muted">errors</span>
       </div>
       <div class="stat"><span class="stat-num">{{ stats.links }}</span><span class="muted">links</span></div>
+      <div class="stat" title="Downloads today">
+        <span class="stat-num">📥 {{ todayDownloads }}</span><span class="muted">today</span>
+      </div>
     </div>
 
     <!-- add -->
@@ -291,6 +294,7 @@ const viewMode = ref<'list' | 'grid'>('list')
 const expanded = ref<Set<string>>(new Set())
 const selected = ref<Set<string>>(new Set())
 const creatorStats = ref<Record<string, number>>({})
+const todayDownloads = ref(0)
 
 async function loadCreatorStats() {
   try {
@@ -304,6 +308,11 @@ async function loadCreatorStats() {
       if (!(clean in map)) map[clean] = c.count
     }
     creatorStats.value = map
+    // Today's downloads from last7Days (last entry = today)
+    const days = s.last7Days || []
+    if (days.length > 0) {
+      todayDownloads.value = days[days.length - 1].count || 0
+    }
   } catch { /* ignore */ }
 }
 
