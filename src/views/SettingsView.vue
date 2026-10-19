@@ -3,7 +3,7 @@
     <h2>Settings</h2>
 
     <div class="card">
-      <h3>Downloads</h3>
+      <h3><span class="sec-icon">📁</span> Downloads</h3>
       <p class="muted">Folder: <code>{{ downloadDir }}</code></p>
       <button class="btn secondary" @click="changeDir">Change folder…</button>
       <p class="muted" style="margin-top: 12px;">
@@ -23,7 +23,7 @@
     </div>
 
     <div class="card">
-      <h3>Smart Mode <span class="muted" style="font-weight: normal; font-size: 13px;">(proxy)</span></h3>
+      <h3><span class="sec-icon">🔀</span> Smart Mode <span class="muted" style="font-weight: normal; font-size: 13px;">(proxy)</span></h3>
       <p class="muted">
         Route downloads through your proxy — only for the platforms you check, so proxy
         bandwidth isn't wasted. Everything else downloads direct.
@@ -113,7 +113,7 @@
     </div>
 
     <div class="card">
-      <h3>POT Server <span class="muted" style="font-weight: normal; font-size: 13px;">(YouTube bot-check)</span></h3>
+      <h3><span class="sec-icon">🤖</span> POT Server <span class="muted" style="font-weight: normal; font-size: 13px;">(YouTube bot-check)</span></h3>
       <p class="muted">
         Deno-powered token server for YouTube. Starts automatically on the first YouTube
         download — or control it here.
@@ -147,7 +147,7 @@
     </div>
 
     <div class="card">
-      <h3>Cookie profiles</h3>
+      <h3><span class="sec-icon">🍪</span> Cookie profiles</h3>
       <p class="muted">
         Log in to the site in your browser, export a <code>cookies.txt</code> (Netscape format),
         and paste it here. Values are encrypted with your OS keychain — DownPilot never
@@ -189,7 +189,7 @@
     </div>
 
     <div class="card">
-      <h3>Runtime dependencies</h3>
+      <h3><span class="sec-icon">⚙️</span> Runtime dependencies</h3>
       <p class="muted">Managed by the <code>dp-deps</code> sidecar. Missing tools are downloaded with SHA-256 verification.</p>
 
       <div v-if="loading" class="muted">Detecting…</div>
@@ -212,7 +212,7 @@
 
     <!-- App Updates (Phase 4) -->
     <div class="card">
-      <h3>App Updates</h3>
+      <h3><span class="sec-icon">🔄</span> App Updates</h3>
       <p class="muted">
         DownPilot checks for updates on startup and daily. Updates download in the
         background — you'll be asked before restarting.
@@ -691,6 +691,7 @@ async function checkUpdates() {
 </script>
 
 <style scoped>
+.sec-icon { margin-right: 8px; font-size: 18px; }
 .row { display: flex; gap: 8px; }
 .url-input {
   flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
