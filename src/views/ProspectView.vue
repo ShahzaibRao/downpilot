@@ -95,6 +95,21 @@
           <option value="lastCheckOld">Last check (oldest)</option>
           <option value="status">Status</option>
         </select>
+        <span class="filter-sep"></span>
+        <div class="view-toggle">
+          <button
+            class="filter-btn"
+            :class="{ active: viewMode === 'list' }"
+            @click="viewMode = 'list'"
+            title="List view"
+          >☰</button>
+          <button
+            class="filter-btn"
+            :class="{ active: viewMode === 'grid' }"
+            @click="viewMode = 'grid'"
+            title="Grid view"
+          >⊞</button>
+        </div>
       </div>
     </div>
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
@@ -108,7 +123,8 @@
       <button class="btn secondary small" @click="bulkRemove">Remove</button>
       <button class="btn secondary small" @click="selected.clear()">Clear</button>
     </div>
-    <div v-for="p in filteredProspects" :key="p.id" class="card prospect-card">
+    <div :class="viewMode === 'grid' ? 'prospect-grid' : ''">
+    <div v-for="p in filteredProspects" :key="p.id" class="card prospect-card" :class="{ 'grid-card': viewMode === 'grid' }">
       <div class="row prospect-head" style="align-items: center; cursor: pointer;" @click="toggleExpand(p.id)">
         <input
           type="checkbox"
@@ -213,6 +229,7 @@
       </div>
       </div><!-- /prospect-details -->
     </div>
+    </div><!-- /prospect-grid -->
     <!-- recent downloads -->
     <div v-if="recentDownloads.length > 0" class="card">
       <h3>Recent Downloads</h3>
@@ -239,6 +256,7 @@ const search = ref('')
 const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
 const platformFilter = ref('')
 const sortBy = ref('name')
+const viewMode = ref<'list' | 'grid'>('list')
 const expanded = ref<Set<string>>(new Set())
 const selected = ref<Set<string>>(new Set())
 const creatorStats = ref<Record<string, number>>({})
@@ -634,6 +652,14 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .pview { width: 100%; }
+.prospect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+.grid-card .prospect-head { flex-wrap: wrap; }
+.view-toggle { display: flex; gap: 4px; }
+.view-toggle .filter-btn { padding: 6px 10px; }
 .bulk-bar {
   display: flex; gap: 8px; align-items: center;
   background: var(--bg-card); border: 1px solid var(--accent);
