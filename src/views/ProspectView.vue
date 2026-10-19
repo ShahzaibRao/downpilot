@@ -100,8 +100,23 @@
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
       No prospects match.
     </div>
+    <div v-if="selected.size > 0" class="bulk-bar">
+      <span><strong>{{ selected.size }}</strong> selected</span>
+      <button class="btn secondary small" @click="bulkCheck" :disabled="checking">Check</button>
+      <button class="btn secondary small" @click="bulkPause">Pause</button>
+      <button class="btn secondary small" @click="bulkResume">Resume</button>
+      <button class="btn secondary small" @click="bulkRemove">Remove</button>
+      <button class="btn secondary small" @click="selected.clear()">Clear</button>
+    </div>
     <div v-for="p in filteredProspects" :key="p.id" class="card prospect-card">
       <div class="row prospect-head" style="align-items: center; cursor: pointer;" @click="toggleExpand(p.id)">
+        <input
+          type="checkbox"
+          :checked="selected.has(p.id)"
+          @click.stop="toggleSelect(p.id)"
+          class="select-box"
+          title="Select for bulk actions"
+        />
         <span class="expand-icon">{{ expanded.has(p.id) ? '▼' : '▶' }}</span>
         <template v-if="editingId === p.id">
           <input v-model="editName" class="url-input" style="max-width: 180px;" @click.stop />
@@ -224,6 +239,49 @@ const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
 const platformFilter = ref('')
 const sortBy = ref('name')
 const expanded = ref<Set<string>>(new Set())
+const selected = ref<Set<string>>(new Set())
+
+function toggleSelect(id: string) {
+  if (selected.value.has(id)) {
+    selected.value.delete(id)
+  } else {
+    selected.value.add(id)
+  }
+}
+
+async function bulkCheck() {
+  const ids = Array.from(selected.value)
+  for (const id of ids) {
+    try { await window.dpApi.prospectsCheckOne(id) } catch { /* continue */ }
+  }
+  selected.value.clear()
+  await load()
+}
+
+async function bulkPause() {
+  for (const id of selected.value) {
+    try { await window.dpApi.prospectsSetStatus(id, 'paused') } catch { /* continue */ }
+  }
+  selected.value.clear()
+  await load()
+}
+
+async function bulkResume() {
+  for (const id of selected.value) {
+    try { await window.dpApi.prospectsUnpause(id) } catch { /* continue */ }
+  }
+  selected.value.clear()
+  await load()
+}
+
+async function bulkRemove() {
+  if (!confirm(`Remove ${selected.value.size} prospect(s)?`)) return
+  for (const id of selected.value) {
+    try { await window.dpApi.prospectsRemove(id) } catch { /* continue */ }
+  }
+  selected.value.clear()
+  await load()
+}
 
 function toggleExpand(id: string) {
   if (expanded.value.has(id)) {
@@ -554,6 +612,13 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .pview { width: 100%; }
+.bulk-bar {
+  display: flex; gap: 8px; align-items: center;
+  background: var(--bg-card); border: 1px solid var(--accent);
+  border-radius: 12px; padding: 10px 16px; margin-bottom: 12px;
+  position: sticky; top: 0; z-index: 10;
+}
+.select-box { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 .prospect-card { transition: border-color 0.2s; }
 .prospect-card:hover { border-color: var(--border); }
 .prospect-head { user-select: none; }
