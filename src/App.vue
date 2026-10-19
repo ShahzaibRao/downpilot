@@ -144,7 +144,7 @@ async function applyTheme() {
       theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     }
     document.documentElement.setAttribute('data-theme', theme)
-    document.documentElement.style.setProperty('--accent', s.accentColor || '#f97316')
+    document.documentElement.style.setProperty('--accent', s.accentColor || 'var(--accent)')
   } catch { /* ignore */ }
 }
 </script>
@@ -155,14 +155,14 @@ async function applyTheme() {
 /* Theme variables - set by JS based on user preference */
 :root {
   --accent: #f97316;
-  --bg-app: #14161a;
-  --bg-tabs: #1b1e24;
-  --bg-card: #1c2027;
-  --bg-input: #24282f;
+  --bg-app: var(--bg-app);
+  --bg-tabs: var(--bg-tabs);
+  --bg-card: var(--bg-card);
+  --bg-input: var(--bg-input);
   --bg-hover: #22262e;
-  --text: #e8eaed;
-  --text-muted: #9aa0aa;
-  --border: #2a2e37;
+  --text: var(--text);
+  --text-muted: var(--text-muted);
+  --border: var(--border);
   --shadow: rgba(0,0,0,0.5);
 }
 
@@ -185,17 +185,17 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: none; border: none; color: var(--text-muted); font-size: 14px;
   padding: 8px 16px; border-radius: 8px; cursor: pointer;
 }
-.tabs button:hover { color: #e8eaed; background: #24282f; }
-.tabs button.active { color: #fff; background: #f97316; }
+.tabs button:hover { color: var(--text); background: var(--bg-input); }
+.tabs button.active { color: #fff; background: var(--accent); }
 .view { flex: 1; overflow-y: auto; padding: 24px; }
-.card { background: #1b1e24; border: 1px solid #2a2e37; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-.muted { color: #9aa0ab; }
+.card { background: var(--bg-tabs); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.muted { color: var(--text-muted); }
 .btn {
-  background: #f97316; color: #fff; border: none; border-radius: 8px;
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
   padding: 8px 16px; font-size: 14px; cursor: pointer;
 }
 .btn:disabled { opacity: 0.5; cursor: default; }
-.btn.secondary { background: #2a2e37; }
+.btn.secondary { background: var(--border); }
 .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
 .badge.ok { background: #143d24; color: #4ade80; }
 .badge.warn { background: #4a2f12; color: #fbbf24; }
@@ -204,10 +204,10 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 .spacer { flex: 1; }
 .bell {
   position: relative;
-  background: none; border: none; color: #9aa0ab; font-size: 18px;
+  background: none; border: none; color: var(--text-muted); font-size: 18px;
   padding: 8px 12px; border-radius: 8px; cursor: pointer;
 }
-.bell:hover { color: #e8eaed; background: #24282f; }
+.bell:hover { color: var(--text); background: var(--bg-input); }
 .badge-count {
   position: absolute; top: 2px; right: 2px;
   background: #ef4444; color: white; font-size: 10px;
@@ -217,17 +217,17 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 .notif-panel {
   position: absolute; top: 56px; right: 16px; width: 380px; max-height: 480px;
-  overflow-y: auto; background: #1b1e24; border: 1px solid #2a2e37;
+  overflow-y: auto; background: var(--bg-tabs); border: 1px solid var(--border);
   border-radius: 16px; z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
 }
 .notif-header {
   display: flex; gap: 6px; align-items: center;
-  padding: 14px 16px; border-bottom: 1px solid #2a2e37;
-  position: sticky; top: 0; background: #1b1e24; border-radius: 16px 16px 0 0;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--bg-tabs); border-radius: 16px 16px 0 0;
   font-weight: 600;
 }
 .notif-item {
-  padding: 14px 16px; border-bottom: 1px solid #24282f; cursor: pointer;
+  padding: 14px 16px; border-bottom: 1px solid var(--bg-input); cursor: pointer;
   display: flex; gap: 12px; align-items: flex-start;
   transition: background 0.15s;
 }
@@ -236,13 +236,13 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 .notif-item.unread { background: rgba(249, 115, 22, 0.08); }
 .notif-item.unread:hover { background: rgba(249, 115, 22, 0.12); }
 .notif-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #f97316;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
   margin-top: 6px; flex-shrink: 0;
 }
 .notif-dot.read { background: #3a3f4a; }
 .notif-content { flex: 1; min-width: 0; }
 .notif-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
-.notif-body { font-size: 12px; color: #9aa0aa; line-height: 1.4; }
+.notif-body { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 .notif-time { font-size: 11px; color: #6b7280; margin-top: 4px; }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 </style>
