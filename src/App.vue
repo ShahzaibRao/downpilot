@@ -125,21 +125,64 @@ window.addEventListener('dp:goto', (e: Event) => {
 
 onMounted(() => {
   loadNotifications()
+  applyTheme()
   window.dpApi.onNotifyUpdate(onNotifyUpdate)
+  // Listen for theme changes from Settings
+  window.addEventListener('dp:theme', applyTheme)
 })
 
 onUnmounted(() => {
   window.dpApi.offNotifyUpdate(onNotifyUpdate)
+  window.removeEventListener('dp:theme', applyTheme)
 })
+
+async function applyTheme() {
+  try {
+    const s = await window.dpApi.getSettings()
+    let theme = s.theme || 'dark'
+    if (theme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.style.setProperty('--accent', s.accentColor || '#f97316')
+  } catch { /* ignore */ }
+}
 </script>
 
 <style>
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: #14161a; color: #e8eaed; }
+
+/* Theme variables - set by JS based on user preference */
+:root {
+  --accent: #f97316;
+  --bg-app: #14161a;
+  --bg-tabs: #1b1e24;
+  --bg-card: #1c2027;
+  --bg-input: #24282f;
+  --bg-hover: #22262e;
+  --text: #e8eaed;
+  --text-muted: #9aa0aa;
+  --border: #2a2e37;
+  --shadow: rgba(0,0,0,0.5);
+}
+
+[data-theme="light"] {
+  --bg-app: #f5f5f7;
+  --bg-tabs: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #f0f0f3;
+  --bg-hover: #e8e8ec;
+  --text: #1a1a1e;
+  --text-muted: #6b7280;
+  --border: #e0e0e5;
+  --shadow: rgba(0,0,0,0.1);
+}
+
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg-app); color: var(--text); }
 .app { display: flex; flex-direction: column; height: 100vh; }
-.tabs { display: flex; gap: 4px; padding: 10px 16px; background: #1b1e24; border-bottom: 1px solid #2a2e37; }
+.tabs { display: flex; gap: 4px; padding: 10px 16px; background: var(--bg-tabs); border-bottom: 1px solid var(--border); }
 .tabs button {
-  background: none; border: none; color: #9aa0ab; font-size: 14px;
+  background: none; border: none; color: var(--text-muted); font-size: 14px;
   padding: 8px 16px; border-radius: 8px; cursor: pointer;
 }
 .tabs button:hover { color: #e8eaed; background: #24282f; }
