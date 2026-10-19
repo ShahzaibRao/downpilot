@@ -103,19 +103,63 @@ function setupUpdater(autoUpdater: any): void {
 export function checkForUpdates(): void {
   if (!app.isPackaged) return
   sendStatus('checking')
-  // Timeout: if no response in 30s, report error (don't hang on "checking...")
-  clearCheckTimeout()
-  checkTimeout = setTimeout(() => {
-    checkTimeout = null
-    sendStatus('error', undefined, undefined, 'Update check timed out (network issue?)')
-  }, 30000)
-  void getUpdater().then((updater) => {
-    updater.checkForUpdates().catch((e: Error) => {
+  // First: test if app's network stack can reach GitHub at all
+  testConnectivity().then((connResult) => {
+    if (!connResult.ok) {
       clearCheckTimeout()
-      console.error('[updater] check failed:', e.message)
-      sendStatus('error', undefined, undefined, e.message)
+      sendStatus('error', undefined, undefined, `Network test failed: ${connResult.error}`)
+      return
+    }
+    // Network OK, now check for updates
+    clearCheckTimeout()
+    checkTimeout = setTimeout(() => {
+      checkTimeout = null
+      sendStatus('error', undefined, undefined, 'Update check timed out after 30s')
+    }, 30000)
+    void getUpdater().then((updater) => {
+      updater.checkForUpdates().catch((e: any) => {
+        clearCheckTimeout()
+        const msg = e?.message || e?.stack?.split('\n')[0] || String(e) || 'Unknown error'
+        console.error('[updater] check failed:', msg)
+        sendStatus('error', undefined, undefined, msg.slice(0, 200))
+      })
+    }).catch((e: any) => {
+      clearCheckTimeout()
+      const msg = e?.message || String(e) || 'Failed to load updater'
+      sendStatus('error', undefined, undefined, msg.slice(0, 200))
     })
   })
+}
+
+/** Test if the app can reach api.github.com (diagnoses network vs updater issues) */
+async function testConnectivity(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { net } = await import('electron')
+    return new Promise((resolve) => {
+      const req = net.request('https://api.github.com/repos/ShahzaibRao/downpilot/releases/latest')
+      req.setHeader('User-Agent', 'DownPilot-updater')
+      req.setHeader('Accept', 'application/vnd.github.v3+json')
+      const timeout = setTimeout(() => {
+        req.abort()
+        resolve({ ok: false, error: 'Connection to api.github.com timed out (10s)' })
+      }, 10000)
+      req.on('response', (res: any) => {
+        clearTimeout(timeout)
+        if (res.statusCode === 200 || res.statusCode === 403) {
+          resolve({ ok: true })
+        } else {
+          resolve({ ok: false, error: `GitHub API returned ${res.statusCode}` })
+        }
+      })
+      req.on('error', (e: Error) => {
+        clearTimeout(timeout)
+        resolve({ ok: false, error: e.message || 'Network error' })
+      })
+      req.end()
+    })
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Test failed' }
+  }
 }
 
 function sendStatus(
