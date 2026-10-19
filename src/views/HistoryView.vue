@@ -15,6 +15,14 @@
         >
           {{ f }}
         </button>
+        <button
+          v-if="entries.length > 0"
+          class="filter-btn clean-btn"
+          @click="clear"
+          title="Clear all history"
+        >
+          🧹
+        </button>
       </div>
     </div>
 
@@ -47,10 +55,6 @@
         <button class="btn secondary small" @click="redownload(e)">Download again</button>
       </div>
       <div v-if="e.error" class="badge err" style="margin-top: 8px;">{{ e.error }}</div>
-    </div>
-
-    <div v-if="entries.length > 0" class="card row" style="justify-content: flex-end;">
-      <button class="btn secondary small" @click="clear">Clear history</button>
     </div>
   </div>
 </template>
@@ -105,6 +109,7 @@ async function redownload(e: HistoryEntry) {
 }
 
 async function clear() {
+  if (!confirm(`Clear all ${entries.value.length} history entries?`)) return
   await window.dpApi.historyClear()
 }
 
@@ -142,6 +147,8 @@ onUnmounted(() => {
 }
 .filter-btn:hover { color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.clean-btn { font-size: 16px; padding: 6px 10px; }
+.clean-btn:hover { border-color: #ef4444; }
 .plat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; word-break: break-all; }
 .badge.engine { background: #2a2438; color: #c4b5fd; }
