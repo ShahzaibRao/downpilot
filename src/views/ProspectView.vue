@@ -1,12 +1,12 @@
 <template>
   <div class="pview">
-    <div class="row" style="align-items: center;">
+    <div class="row prospect-title-row" style="align-items: center;">
       <div>
-        <h2 style="margin: 0;">Prospects</h2>
-        <p class="muted" style="margin: 4px 0;">
-          Creators to auto-watch. New content is downloaded automatically every 60 minutes.
+        <h2 style="margin: 0; font-size: 20px;">Prospects</h2>
+        <p class="muted" style="margin: 2px 0; font-size: 12px;">
+          {{ prospects.length }} creators
           <span v-if="prospects.length > 0" class="check-info">
-            · Last check: <strong>{{ lastCheckAgo }}</strong> · Next: <strong>{{ nextCheckInAll }}</strong>
+            · Last: <strong>{{ lastCheckAgo }}</strong> · Next: <strong>{{ nextCheckInAll }}</strong>
           </span>
         </p>
       </div>
@@ -852,14 +852,14 @@ function onQueueUpdate(tasks: QueueTask[]) {
 }
 .stats {
   display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 .stat {
   background: var(--bg-card);
-  border: 1px solid #333;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 16px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
