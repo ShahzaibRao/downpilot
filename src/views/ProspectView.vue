@@ -124,7 +124,12 @@
       <button class="btn secondary small" @click="selected.clear()">Clear</button>
     </div>
     <div :class="viewMode === 'grid' ? 'prospect-grid' : ''">
-    <div v-for="p in filteredProspects" :key="p.id" class="card prospect-card" :class="{ 'grid-card': viewMode === 'grid' }">
+    <div
+      v-for="p in filteredProspects"
+      :key="p.id"
+      class="card prospect-card"
+      :class="{ 'grid-card': viewMode === 'grid', 'has-error': p.status === 'error' }"
+    >
       <div class="row prospect-head" style="align-items: center; cursor: pointer;" @click="toggleExpand(p.id)">
         <input
           type="checkbox"
@@ -652,6 +657,11 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .pview { width: 100%; }
+.prospect-card.has-error {
+  border-color: #ef4444;
+  border-width: 2px;
+}
+.prospect-card.has-error .prospect-head { background: rgba(239, 68, 68, 0.05); border-radius: 8px; }
 .prospect-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
