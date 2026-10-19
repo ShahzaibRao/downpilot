@@ -188,7 +188,7 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 .tabs button:hover { color: var(--text); background: var(--bg-input); }
 .tabs button.active { color: #fff; background: var(--accent); }
 .view { flex: 1; overflow-y: auto; padding: 24px; }
-.view > div { max-width: 1000px; margin-left: auto; margin-right: auto; width: 100%; }
+.view > div { width: 100%; }
 @media (max-width: 1080px) {
   .view { padding: 16px; }
 }
