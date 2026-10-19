@@ -23,8 +23,13 @@
     <!-- add -->
     <div class="card">
       <h3>Add prospect</h3>
-      <div class="row">
-        <input v-model="newUrl" class="url-input" placeholder="Profile URL (e.g. https://www.tiktok.com/@someone)" />
+      <div class="row" style="align-items: center;">
+        <div class="url-wrap" style="flex: 1;">
+          <span v-if="newPlat" class="plat-badge" :style="{ background: platColor(newPlat) }">
+            {{ platIcon(newPlat) }} {{ newPlat }}
+          </span>
+          <input v-model="newUrl" class="url-input" placeholder="Profile URL (e.g. https://www.tiktok.com/@someone)" style="border: none; background: transparent;" />
+        </div>
         <input v-model="newName" class="url-input" style="max-width: 180px;" placeholder="Name (optional)" />
         <select v-model="newQuality" class="url-input" style="max-width: 110px; flex: none;">
           <option value="best">Best</option>
@@ -114,7 +119,9 @@
       <!-- links -->
       <div class="preview" style="margin-top: 8px;">
         <div v-for="l in p.links" :key="l.id" class="preview-row">
-          <span class="badge">{{ l.platform }}</span>
+          <span class="plat-badge" :style="{ background: platColor(l.platform) }">
+            {{ platIcon(l.platform) }} {{ l.platform }}
+          </span>
           <!-- Per-link status (Rao 2026-10-18) -->
           <span v-if="l.linkStatus === 'ok'" class="badge ok" title="Last check OK">✓</span>
           <span v-else-if="l.linkStatus === 'error'" class="badge err" :title="l.linkLastError || 'Error'">✗ ({{ l.linkFailCount }}/3)</span>
@@ -171,6 +178,29 @@ const newQuality = ref<Quality>('best')
 const newInterval = ref(60)
 const adding = ref(false)
 const addMsg = ref('')
+
+// Platform auto-detect for new prospect URL
+const newPlat = computed(() => {
+  const u = newUrl.value.toLowerCase()
+  if (!u) return ''
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube'
+  if (u.includes('tiktok.com')) return 'tiktok'
+  if (u.includes('instagram.com')) return 'instagram'
+  if (u.includes('x.com') || u.includes('twitter.com')) return 'x'
+  if (u.includes('snapchat.com')) return 'snapchat'
+  if (u.includes('pinterest.com')) return 'pinterest'
+  return ''
+})
+const PLAT_COLORS: Record<string, string> = {
+  youtube: '#ff0000', tiktok: '#000000', instagram: '#e1306c',
+  x: '#1d9bf0', snapchat: '#fffc00', pinterest: '#bd081c', facebook: '#1877f2'
+}
+const PLAT_ICONS: Record<string, string> = {
+  youtube: '▶', tiktok: '♪', instagram: '📷',
+  x: '𝕏', snapchat: '👻', pinterest: '📌', facebook: 'f'
+}
+function platColor(p: string) { return PLAT_COLORS[p] || '#666' }
+function platIcon(p: string) { return PLAT_ICONS[p] || '🔗' }
 const linkInputs = ref<Record<string, string>>({})
 const checking = ref(false)
 const checkMsg = ref('')
@@ -423,6 +453,18 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .view { max-width: 860px; }
+.url-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: #24282f; border: 1px solid #2a2e37; border-radius: 8px;
+  padding: 0 8px 0 12px;
+}
+.url-wrap:focus-within { border-color: #2f6fed; }
+.url-wrap .url-input { border: none !important; background: transparent !important; }
+.plat-badge {
+  font-size: 11px; font-weight: 700; color: #fff;
+  padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+  text-transform: capitalize; flex-shrink: 0;
+}
 .card {
   background: #1e1e2e;
   border: 1px solid #333;
