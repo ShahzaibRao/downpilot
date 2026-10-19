@@ -56,16 +56,29 @@
 
     <!-- list -->
     <div v-if="prospects.length === 0" class="card muted">No prospects yet. Add one above to start auto-watching.</div>
-    <div v-else class="card" style="margin-bottom: 12px;">
-      <input
-        v-model="search"
-        class="url-input"
-        placeholder="🔍 Search prospects…"
-        style="width: 100%;"
-      />
+    <div v-else>
+      <div class="card" style="margin-bottom: 12px;">
+        <input
+          v-model="search"
+          class="url-input"
+          placeholder="🔍 Search prospects…"
+          style="width: 100%;"
+        />
+      </div>
+      <div class="filters" style="margin-bottom: 12px;">
+        <button
+          v-for="f in ['all', 'watching', 'paused', 'error']"
+          :key="f"
+          class="filter-btn"
+          :class="{ active: statusFilter === f }"
+          @click="statusFilter = f"
+        >
+          {{ f }} ({{ statusCounts[f] }})
+        </button>
+      </div>
     </div>
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
-      No prospects match "{{ search }}".
+      No prospects match.
     </div>
     <div v-for="p in filteredProspects" :key="p.id" class="card">
       <div class="row" style="align-items: center;">
@@ -184,11 +197,23 @@ import type { Prospect, CheckResult, HistoryEntry, Quality, QueueTask } from '..
 
 const prospects = ref<Prospect[]>([])
 const search = ref('')
+const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
+
+const statusCounts = computed(() => ({
+  all: prospects.value.length,
+  watching: prospects.value.filter((p) => p.status === 'ok').length,
+  paused: prospects.value.filter((p) => p.status === 'paused').length,
+  error: prospects.value.filter((p) => p.status === 'error').length
+}))
 
 const filteredProspects = computed(() => {
+  let list = prospects.value
+  if (statusFilter.value === 'watching') list = list.filter((p) => p.status === 'ok')
+  else if (statusFilter.value === 'paused') list = list.filter((p) => p.status === 'paused')
+  else if (statusFilter.value === 'error') list = list.filter((p) => p.status === 'error')
   const q = search.value.toLowerCase().trim()
-  if (!q) return prospects.value
-  return prospects.value.filter((p) =>
+  if (!q) return list
+  return list.filter((p) =>
     p.name.toLowerCase().includes(q) ||
     p.links.some((l) => l.url.toLowerCase().includes(q))
   )
@@ -474,6 +499,14 @@ function onQueueUpdate(tasks: QueueTask[]) {
 
 <style scoped>
 .pview { width: 100%; }
+.filters { display: flex; gap: 6px; }
+.filter-btn {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer;
+  text-transform: capitalize;
+}
+.filter-btn:hover { color: var(--text); }
+.filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (max-width: 960px) {
   .pview { padding: 0 4px; }
 }
