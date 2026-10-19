@@ -32,9 +32,12 @@
         :class="{ unread: !n.read }"
         @click="openNotification(n)"
       >
-        <div><strong>{{ n.title }}</strong></div>
-        <div class="muted" style="font-size: 12px;">{{ n.body }}</div>
-        <div class="muted" style="font-size: 11px;">{{ formatTime(n.createdAt) }}</div>
+        <span class="notif-dot" :class="{ read: n.read }"></span>
+        <div class="notif-content">
+          <div class="notif-title">{{ n.title }}</div>
+          <div class="notif-body">{{ n.body }}</div>
+          <div class="notif-time">{{ formatTime(n.createdAt) }}</div>
+        </div>
       </div>
     </div>
     <main class="view">
@@ -140,12 +143,12 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   padding: 8px 16px; border-radius: 8px; cursor: pointer;
 }
 .tabs button:hover { color: #e8eaed; background: #24282f; }
-.tabs button.active { color: #fff; background: #2f6fed; }
+.tabs button.active { color: #fff; background: #f97316; }
 .view { flex: 1; overflow-y: auto; padding: 24px; }
 .card { background: #1b1e24; border: 1px solid #2a2e37; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
 .muted { color: #9aa0ab; }
 .btn {
-  background: #2f6fed; color: #fff; border: none; border-radius: 8px;
+  background: #f97316; color: #fff; border: none; border-radius: 8px;
   padding: 8px 16px; font-size: 14px; cursor: pointer;
 }
 .btn:disabled { opacity: 0.5; cursor: default; }
@@ -170,20 +173,33 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   padding: 0 4px;
 }
 .notif-panel {
-  position: absolute; top: 56px; right: 16px; width: 360px; max-height: 480px;
+  position: absolute; top: 56px; right: 16px; width: 380px; max-height: 480px;
   overflow-y: auto; background: #1b1e24; border: 1px solid #2a2e37;
-  border-radius: 12px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  border-radius: 16px; z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
 }
 .notif-header {
   display: flex; gap: 6px; align-items: center;
-  padding: 12px; border-bottom: 1px solid #2a2e37;
-  position: sticky; top: 0; background: #1b1e24;
+  padding: 14px 16px; border-bottom: 1px solid #2a2e37;
+  position: sticky; top: 0; background: #1b1e24; border-radius: 16px 16px 0 0;
+  font-weight: 600;
 }
 .notif-item {
-  padding: 12px; border-bottom: 1px solid #24282f; cursor: pointer;
+  padding: 14px 16px; border-bottom: 1px solid #24282f; cursor: pointer;
+  display: flex; gap: 12px; align-items: flex-start;
+  transition: background 0.15s;
 }
-.notif-item:hover { background: #24282f; }
-.notif-item.unread { background: #1e2a4a; }
-.notif-item.unread:hover { background: #243356; }
+.notif-item:hover { background: #22262e; }
+.notif-item:last-child { border-bottom: none; }
+.notif-item.unread { background: rgba(249, 115, 22, 0.08); }
+.notif-item.unread:hover { background: rgba(249, 115, 22, 0.12); }
+.notif-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #f97316;
+  margin-top: 6px; flex-shrink: 0;
+}
+.notif-dot.read { background: #3a3f4a; }
+.notif-content { flex: 1; min-width: 0; }
+.notif-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.notif-body { font-size: 12px; color: #9aa0aa; line-height: 1.4; }
+.notif-time { font-size: 11px; color: #6b7280; margin-top: 4px; }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 </style>
