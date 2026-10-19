@@ -76,4 +76,24 @@ Full HLD/LLD live in the project's Notion design notes.
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE). DownVid engine attribution retained.
+MIT — see [LICENSE](LICENSE).
+
+## 🙏 Credits & Attribution
+
+DownPilot stands on the shoulders of giants:
+
+**Engine inspiration:**
+- [DownVid](https://github.com/yxxbc/downvid) (MIT, © yxxbc) — DownPilot's engine design learns from DownVid's architecture
+- [Videdown](https://github.com/cshuangyy/videdown) (MIT, © cshuangyy) — the project DownVid itself evolved from
+
+**Core tools** (bundled via Go sidecar with SHA-256 verification):
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — video extraction engine
+- [gallery-dl](https://github.com/mikf/gallery-dl) — image/gallery downloader
+- [FFmpeg](https://ffmpeg.org/) — media processing
+
+**Runtime:**
+- [Deno](https://deno.land/) — powers the POT token server for YouTube
+- [Electron](https://www.electronjs.org/) — desktop framework
+- [Vue.js](https://vuejs.org/) — UI framework
+
+Thank you to all the maintainers and contributors of these amazing open-source projects. 🙏
