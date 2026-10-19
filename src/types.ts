@@ -228,6 +228,7 @@ export interface DpApi {
   prospectsSetStatus(id: string, status: string): Promise<boolean>
   prospectsUnpause(id: string): Promise<boolean>
   prospectsUnpauseLink(prospectId: string, linkId: string): Promise<boolean>
+  prospectsOpenFolder(id: string): Promise<boolean>
   prospectsCheckNow(): Promise<CheckResult[]>
   prospectsCheckOne(id: string): Promise<CheckResult | null>
   prospectsUpdateLink(prospectId: string, linkId: string, newUrl: string): Promise<ProspectLink>
