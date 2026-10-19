@@ -11,9 +11,13 @@
         </p>
       </div>
       <span class="spacer"></span>
-      <button class="btn secondary" :disabled="checking" @click="checkNow">
-        {{ checking ? 'Checking…' : 'Check now' }}
-      </button>
+      <div class="header-actions">
+        <button class="btn secondary small" :disabled="checking" @click="checkNow" title="Check all prospects">
+          {{ checking ? 'Checking…' : '✓ Check all' }}
+        </button>
+        <button class="btn secondary small" @click="pauseAll" title="Pause all prospects">⏸ Pause all</button>
+        <button class="btn secondary small" @click="resumeAll" title="Resume all prospects">▶ Resume all</button>
+      </div>
     </div>
     <div v-if="checkMsg" class="muted" style="font-size: 13px; margin-bottom: 8px;">{{ checkMsg }}</div>
 
@@ -695,10 +699,27 @@ async function checkNow() {
       (errors.length ? ` — ${errors.length} error(s): ${errors.map((e) => e.prospectName).join(', ')}` : ' ✓')
     await load()
   } catch (e) {
-    checkMsg.value = `Check failed: ${(e as Error).message}`
+    checkMsg.value = (e as Error).message
   } finally {
     checking.value = false
   }
+}
+
+async function pauseAll() {
+  if (!confirm(`Pause all ${prospects.value.length} prospect(s)?`)) return
+  for (const p of prospects.value) {
+    try { await window.dpApi.prospectsSetStatus(p.id, 'paused') } catch { /* continue */ }
+  }
+  await load()
+}
+
+async function resumeAll() {
+  for (const p of prospects.value) {
+    if (p.status === 'paused') {
+      try { await window.dpApi.prospectsUnpause(p.id) } catch { /* continue */ }
+    }
+  }
+  await load()
 }
 
 function onCheckDone(_e: Event, results: CheckResult[]) {
@@ -777,6 +798,7 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .stat.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
 .stat.clickable.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
 .health-ring { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; }
+.header-actions { display: flex; gap: 6px; }
 .check-info { color: var(--text-muted); }
 .check-info strong { color: var(--text); }
 .health-text {
