@@ -3,7 +3,12 @@
     <div class="row" style="align-items: center;">
       <div>
         <h2 style="margin: 0;">Prospects</h2>
-        <p class="muted" style="margin: 4px 0;">Creators to auto-watch. New content is downloaded automatically every 60 minutes.</p>
+        <p class="muted" style="margin: 4px 0;">
+          Creators to auto-watch. New content is downloaded automatically every 60 minutes.
+          <span v-if="prospects.length > 0" class="check-info">
+            · Last check: <strong>{{ lastCheckAgo }}</strong> · Next: <strong>{{ nextCheckInAll }}</strong>
+          </span>
+        </p>
       </div>
       <span class="spacer"></span>
       <button class="btn secondary" :disabled="checking" @click="checkNow">
@@ -483,6 +488,34 @@ const healthPercent = computed(() => {
   return Math.round((stats.value.watching / total) * 100)
 })
 
+const lastCheckAgo = computed(() => {
+  const times = prospects.value
+    .map((p) => p.lastCheck ? new Date(p.lastCheck as string).getTime() : 0)
+    .filter((t) => t > 0)
+  if (times.length === 0) return 'never'
+  const latest = Math.max(...times)
+  const mins = Math.round((Date.now() - latest) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+})
+
+const nextCheckInAll = computed(() => {
+  const active = prospects.value.filter((p) => p.status === 'ok' && p.lastCheck)
+  if (active.length === 0) return '—'
+  const nexts = active.map((p) =>
+    new Date(p.lastCheck as string).getTime() + (p.intervalMinutes || 60) * 60 * 1000
+  )
+  const soonest = Math.min(...nexts)
+  const ms = soonest - Date.now()
+  if (ms <= 0) return 'due now'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `in ${mins}m`
+  return `in ${Math.floor(mins / 60)}h ${mins % 60}m`
+})
+
 const healthColor = computed(() => {
   const h = healthPercent.value
   if (h >= 80) return '#22c55e'
@@ -735,6 +768,8 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .stat.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
 .stat.clickable.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
 .health-ring { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; }
+.check-info { color: var(--text-muted); }
+.check-info strong { color: var(--text); }
 .health-text {
   position: absolute; top: 22px;
   font-size: 14px; font-weight: 700;
