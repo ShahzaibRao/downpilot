@@ -136,12 +136,12 @@ onUnmounted(() => {
 .hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .filters { display: flex; gap: 6px; }
 .filter-btn {
-  background: #24282f; border: 1px solid #2a2e37; color: #9aa0aa;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted);
   border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer;
   text-transform: capitalize;
 }
-.filter-btn:hover { color: #e8eaed; }
-.filter-btn.active { background: #f97316; border-color: #f97316; color: #fff; }
+.filter-btn:hover { color: var(--text); }
+.filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .plat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; word-break: break-all; }
 .badge.engine { background: #2a2438; color: #c4b5fd; }
