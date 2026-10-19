@@ -144,7 +144,7 @@ async function applyTheme() {
       theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     }
     document.documentElement.setAttribute('data-theme', theme)
-    document.documentElement.style.setProperty('--accent', s.accentColor || 'var(--accent)')
+    document.documentElement.style.setProperty('--accent', s.accentColor || '#f97316')
   } catch { /* ignore */ }
 }
 </script>
@@ -155,27 +155,27 @@ async function applyTheme() {
 /* Theme variables - set by JS based on user preference */
 :root {
   --accent: #f97316;
-  --bg-app: var(--bg-app);
-  --bg-tabs: var(--bg-tabs);
-  --bg-card: var(--bg-card);
-  --bg-input: var(--bg-input);
+  --bg-app: #14161a;
+  --bg-tabs: #1b1e24;
+  --bg-card: #1c2027;
+  --bg-input: #24282f;
   --bg-hover: #22262e;
-  --text: var(--text);
-  --text-muted: var(--text-muted);
-  --border: var(--border);
+  --text: #e8eaed;
+  --text-muted: #9aa0aa;
+  --border: #2a2e37;
   --shadow: rgba(0,0,0,0.5);
 }
 
 [data-theme="light"] {
-  --bg-app: #f5f5f7;
+  --bg-app: #f0f0f3;
   --bg-tabs: #ffffff;
   --bg-card: #ffffff;
   --bg-input: #f0f0f3;
   --bg-hover: #e8e8ec;
   --text: #1a1a1e;
   --text-muted: #6b7280;
-  --border: #e0e0e5;
-  --shadow: rgba(0,0,0,0.1);
+  --border: #d0d0d8;
+  --shadow: rgba(0,0,0,0.08);
 }
 
 body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg-app); color: var(--text); }
