@@ -44,12 +44,12 @@ defineEmits<{
 <style scoped>
 .dep-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  padding: 12px 0; border-bottom: 1px solid #2a2e37;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
 }
 .dep-row:last-child { border-bottom: none; }
 .dep-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px; }
 .dep-actions { display: flex; align-items: center; }
 .dep-reason { flex-basis: 100%; font-size: 12px; }
 .progress { display: flex; align-items: center; gap: 8px; min-width: 200px; }
-.progress .bar { height: 8px; background: #f97316; border-radius: 4px; transition: width 0.2s; flex: 1; }
+.progress .bar { height: 8px; background: var(--accent); border-radius: 4px; transition: width 0.2s; flex: 1; }
 </style>
