@@ -78,44 +78,9 @@
       </div>
     </div>
 
-    <div v-if="tasks.length === 0" class="card">
-      <p class="muted">Queue is empty. Paste a link above — tasks survive app restarts.</p>
-    </div>
-
-    <div v-for="task in tasks" :key="task.id" class="card">
-      <div class="job-head">
-        <strong>{{ task.filename || task.url }}</strong>
-        <span v-if="task.engine" class="badge engine">{{ task.engine }}</span>
-        <span v-if="task.scope !== 'single'" class="badge">{{ task.scope }}</span>
-        <span v-if="task.content && task.content !== 'all'" class="badge">{{ task.content }}</span>
-        <span v-if="task.status === 'queued'" class="badge">queued</span>
-        <span v-else-if="task.status === 'running'" class="badge info">
-          {{ task.percent < 0 ? 'working…' : 'downloading' }}
-        </span>
-        <span v-else-if="task.status === 'paused'" class="badge">paused</span>
-        <span v-else-if="task.status === 'done'" class="badge ok">done</span>
-        <span v-else class="badge err">failed</span>
-      </div>
-      <div class="progress" :class="{ indeterminate: task.percent < 0 }">
-        <div class="bar" :style="{ width: Math.min(100, Math.max(0, task.percent)) + '%' }"></div>
-      </div>
-      <div class="job-meta muted">
-        <span v-if="task.percent >= 0">{{ task.percent.toFixed(1) }}%</span>
-        <span v-else>working…</span>
-        <span v-if="task.speed">{{ task.speed }}</span>
-        <span v-if="task.eta">ETA {{ task.eta }}</span>
-        <span v-if="task.total">{{ formatBytes(task.downloaded) }} / {{ formatBytes(task.total) }}</span>
-        <span class="spacer"></span>
-        <button v-if="task.status === 'running'" class="btn secondary small" @click="pause(task.id)">Pause</button>
-        <button v-if="task.status === 'paused'" class="btn secondary small" @click="resume(task.id)">Resume</button>
-        <button v-if="task.status === 'failed'" class="btn secondary small" @click="retry(task.id)">Retry</button>
-        <button v-if="task.status !== 'running'" class="btn secondary small" @click="remove(task.id)">✕</button>
-      </div>
-      <div v-if="task.error" class="badge err" style="margin-top: 8px;">{{ task.error }}</div>
-    </div>
-
-    <div v-if="hasFinished" class="card row" style="justify-content: flex-end;">
-      <button class="btn secondary small" @click="clearDone">Clear completed</button>
+    <div v-if="queueCount > 0" class="card row" style="justify-content: space-between; align-items: center;">
+      <span class="muted">{{ queueCount }} task(s) in queue</span>
+      <button class="btn secondary small" @click="goQueue">Open Queue →</button>
     </div>
   </div>
 </template>
@@ -143,7 +108,7 @@ const bulkResult = ref('')
 
 let unsubscribe: (() => void) | null = null
 
-const hasFinished = computed(() => tasks.value.some((t) => t.status === 'done' || t.status === 'failed'))
+const queueCount = computed(() => tasks.value.length)
 
 // Platform auto-detection
 const detectedPlatform = computed(() => {
@@ -239,21 +204,12 @@ async function addBulk() {
   }
 }
 
-async function pause(id: string) { await window.dpApi.queuePause(id) }
-async function resume(id: string) { await window.dpApi.queueResume(id) }
-async function retry(id: string) { await window.dpApi.queueRetry(id) }
-async function remove(id: string) { await window.dpApi.queueCancel(id) }
-async function clearDone() { await window.dpApi.queueClearDone() }
-
-function formatBytes(n: number): string {
-  if (n <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
-  return `${(n / 1024 ** i).toFixed(1)} ${units[i]}`
-}
-
 function goSettings() {
   window.dispatchEvent(new CustomEvent('dp:goto', { detail: 'settings' }))
+}
+
+function goQueue() {
+  window.dispatchEvent(new CustomEvent('dp:goto', { detail: 'queue' }))
 }
 
 onMounted(async () => {
