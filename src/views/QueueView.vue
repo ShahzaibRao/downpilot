@@ -152,14 +152,14 @@ onUnmounted(() => {
   text-transform: capitalize;
 }
 .filter-btn:hover { color: #e8eaed; }
-.filter-btn.active { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+.filter-btn.active { background: #f97316; border-color: #f97316; color: #fff; }
 .task-card { transition: border-color 0.2s; }
 .task-card:hover { border-color: #3a3f4a; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .plat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .task-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress { height: 8px; background: #2a2e37; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
-.progress .bar { height: 100%; background: #2f6fed; border-radius: 4px; transition: width 0.3s; }
+.progress .bar { height: 100%; background: #f97316; border-radius: 4px; transition: width 0.3s; }
 .progress.indeterminate .bar { animation: slide 1.5s infinite; width: 30% !important; }
 @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
 .job-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; }
