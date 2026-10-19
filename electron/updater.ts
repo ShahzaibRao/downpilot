@@ -11,8 +11,12 @@ import { app, BrowserWindow, dialog } from 'electron'
 let autoUpdater: any = null
 async function getUpdater() {
   if (!autoUpdater) {
-    const mod = await import('electron-updater')
-    autoUpdater = mod.autoUpdater
+    const mod: any = await import('electron-updater')
+    // Handle different export styles (named, default, or direct)
+    autoUpdater = mod.autoUpdater || mod.default?.autoUpdater || mod.default
+    if (!autoUpdater) {
+      throw new Error('electron-updater module loaded but autoUpdater not found')
+    }
   }
   return autoUpdater
 }
