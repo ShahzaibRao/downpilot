@@ -458,7 +458,7 @@ function onQueueUpdate(tasks: QueueTask[]) {
   background: #24282f; border: 1px solid #2a2e37; border-radius: 8px;
   padding: 0 8px 0 12px;
 }
-.url-wrap:focus-within { border-color: #2f6fed; }
+.url-wrap:focus-within { border-color: #f97316; }
 .url-wrap .url-input { border: none !important; background: transparent !important; }
 .plat-badge {
   font-size: 11px; font-weight: 700; color: #fff;
