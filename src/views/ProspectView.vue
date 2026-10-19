@@ -87,6 +87,14 @@
         >
           {{ platIcon(pl) }} {{ pl }}
         </button>
+        <span class="filter-sep"></span>
+        <select v-model="sortBy" class="sort-select" title="Sort by">
+          <option value="name">Name A–Z</option>
+          <option value="nameDesc">Name Z–A</option>
+          <option value="lastCheck">Last check (newest)</option>
+          <option value="lastCheckOld">Last check (oldest)</option>
+          <option value="status">Status</option>
+        </select>
       </div>
     </div>
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
@@ -214,6 +222,7 @@ const prospects = ref<Prospect[]>([])
 const search = ref('')
 const statusFilter = ref<'all' | 'watching' | 'paused' | 'error'>('all')
 const platformFilter = ref('')
+const sortBy = ref('name')
 const expanded = ref<Set<string>>(new Set())
 
 function toggleExpand(id: string) {
@@ -246,11 +255,23 @@ const filteredProspects = computed(() => {
     list = list.filter((p) => p.links.some((l) => l.platform === platformFilter.value))
   }
   const q = search.value.toLowerCase().trim()
-  if (!q) return list
-  return list.filter((p) =>
-    p.name.toLowerCase().includes(q) ||
-    p.links.some((l) => l.url.toLowerCase().includes(q))
-  )
+  if (q) {
+    list = list.filter((p) =>
+      p.name.toLowerCase().includes(q) ||
+      p.links.some((l) => l.url.toLowerCase().includes(q))
+    )
+  }
+  // Sort
+  const sorted = [...list]
+  if (sortBy.value === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name))
+  else if (sortBy.value === 'nameDesc') sorted.sort((a, b) => b.name.localeCompare(a.name))
+  else if (sortBy.value === 'lastCheck') sorted.sort((a, b) => Number(b.lastCheck || 0) - Number(a.lastCheck || 0))
+  else if (sortBy.value === 'lastCheckOld') sorted.sort((a, b) => Number(a.lastCheck || 0) - Number(b.lastCheck || 0))
+  else if (sortBy.value === 'status') {
+    const order = { error: 0, paused: 1, ok: 2 }
+    sorted.sort((a, b) => (order[a.status as keyof typeof order] ?? 3) - (order[b.status as keyof typeof order] ?? 3))
+  }
+  return sorted
 })
 const newUrl = ref('')
 const newName = ref('')
@@ -550,6 +571,10 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .filter-sep { width: 1px; background: var(--border); margin: 4px 6px; }
 .plat-filter { text-transform: capitalize; }
+.sort-select {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  border-radius: 20px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+}
 @media (max-width: 960px) {
   .pview { padding: 0 4px; }
 }
