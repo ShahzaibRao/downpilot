@@ -14,9 +14,15 @@
 
     <!-- dashboard stats -->
     <div v-if="prospects.length > 0" class="stats">
-      <div class="stat"><span class="stat-num">{{ stats.watching }}</span><span class="muted">watching</span></div>
-      <div class="stat"><span class="stat-num">{{ stats.paused }}</span><span class="muted">paused</span></div>
-      <div class="stat"><span class="stat-num">{{ stats.errors }}</span><span class="muted">errors</span></div>
+      <div class="stat clickable" :class="{ active: statusFilter === 'watching' }" @click="statusFilter = statusFilter === 'watching' ? 'all' : 'watching'" title="Filter: watching">
+        <span class="stat-num">{{ stats.watching }}</span><span class="muted">watching</span>
+      </div>
+      <div class="stat clickable" :class="{ active: statusFilter === 'paused' }" @click="statusFilter = statusFilter === 'paused' ? 'all' : 'paused'" title="Filter: paused">
+        <span class="stat-num">{{ stats.paused }}</span><span class="muted">paused</span>
+      </div>
+      <div class="stat clickable" :class="{ active: statusFilter === 'error' }" @click="statusFilter = statusFilter === 'error' ? 'all' : 'error'" title="Filter: errors">
+        <span class="stat-num">{{ stats.errors }}</span><span class="muted">errors</span>
+      </div>
       <div class="stat"><span class="stat-num">{{ stats.links }}</span><span class="muted">links</span></div>
     </div>
 
@@ -692,6 +698,9 @@ function onQueueUpdate(tasks: QueueTask[]) {
 }
 .filter-btn:hover { color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stat.clickable { cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+.stat.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
+.stat.clickable.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); }
 .filter-sep { width: 1px; background: var(--border); margin: 4px 6px; }
 .plat-filter { text-transform: capitalize; }
 .sort-select {
