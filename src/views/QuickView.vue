@@ -230,12 +230,12 @@ onUnmounted(() => {
 .url-row { align-items: center; }
 .url-wrap {
   flex: 1; display: flex; align-items: center; gap: 8px;
-  background: #24282f; border: 1px solid #2a2e37; border-radius: 8px;
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
   padding: 0 8px 0 12px;
 }
-.url-wrap:focus-within { border-color: #f97316; }
+.url-wrap:focus-within { border-color: var(--accent); }
 .url-wrap .url-input {
-  flex: 1; background: transparent; border: none; color: #e8eaed;
+  flex: 1; background: transparent; border: none; color: var(--text);
   padding: 10px 0; font-size: 14px;
 }
 .url-wrap .url-input:focus { outline: none; }
@@ -245,21 +245,21 @@ onUnmounted(() => {
   text-transform: capitalize;
 }
 .icon-btn {
-  background: transparent; border: none; color: #9aa0aa;
+  background: transparent; border: none; color: var(--text-muted);
   font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;
 }
-.icon-btn:hover { color: #e8eaed; background: #2a2e37; }
+.icon-btn:hover { color: var(--text); background: var(--border); }
 .url-input {
-  flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 10px 12px; font-size: 14px;
 }
-.url-input:focus { outline: none; border-color: #f97316; }
+.url-input:focus { outline: none; border-color: var(--accent); }
 .quality {
-  background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 10px; font-size: 14px;
 }
 .num {
-  width: 70px; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
+  width: 70px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
   border-radius: 6px; padding: 6px 8px; font-size: 13px; margin-left: 4px;
 }
 .scope-opts { align-items: center; margin-top: 8px; }
@@ -270,11 +270,11 @@ onUnmounted(() => {
 .preview-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .preview-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9aa0a6; }
 .job-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; word-break: break-all; }
-.progress { height: 8px; background: #24282f; border-radius: 4px; overflow: hidden; }
-.progress .bar { height: 100%; background: #f97316; border-radius: 4px; transition: width 0.3s; }
+.progress { height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+.progress .bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
 .progress.indeterminate .bar {
   width: 30% !important;
-  background: linear-gradient(90deg, #f97316 25%, #6ea8ff 50%, #f97316 75%);
+  background: linear-gradient(90deg, var(--accent) 25%, #6ea8ff 50%, var(--accent) 75%);
   background-size: 200% 100%;
   animation: slide 1.2s linear infinite;
 }
