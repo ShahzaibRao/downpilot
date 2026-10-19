@@ -1,5 +1,5 @@
 <template>
-  <div class="view">
+  <div class="pview">
     <div class="row" style="align-items: center;">
       <div>
         <h2 style="margin: 0;">Prospects</h2>
@@ -452,7 +452,10 @@ function onQueueUpdate(tasks: QueueTask[]) {
 </script>
 
 <style scoped>
-.view { max-width: 860px; }
+.pview { width: 100%; }
+@media (max-width: 960px) {
+  .pview { padding: 0 4px; }
+}
 .url-wrap {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
