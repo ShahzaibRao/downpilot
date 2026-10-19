@@ -44,12 +44,12 @@
       <svg viewBox="0 0 400 70" class="chart">
         <defs>
           <linearGradient id="spd" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#f97316" stop-opacity="0.35"/>
-            <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+            <stop offset="0" stop-color="var(--accent)" stop-opacity="0.35"/>
+            <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
           </linearGradient>
         </defs>
         <path :d="speedArea" fill="url(#spd)"/>
-        <path :d="speedLine" fill="none" stroke="#f97316" stroke-width="2"/>
+        <path :d="speedLine" fill="none" stroke="var(--accent)" stroke-width="2"/>
       </svg>
       <div class="muted small">Current: {{ fmtSpeed(stats.currentSpeed || 0) }}</div>
     </div>
@@ -140,7 +140,7 @@ let unsubHistory: (() => void) | null = null
 let refreshTimer: any = null
 
 const PLAT_COLORS: Record<string, string> = {
-  youtube: '#f97316', tiktok: '#22c55e', instagram: '#f59e0b',
+  youtube: 'var(--accent)', tiktok: '#22c55e', instagram: '#f59e0b',
   x: '#8b5cf6', snapchat: '#ef4444', pinterest: '#ec4899', other: '#6b7280'
 }
 function platColor(p: string) { return PLAT_COLORS[p] || PLAT_COLORS.other }
@@ -244,21 +244,21 @@ onUnmounted(() => {
 .dash-head { display: flex; align-items: baseline; justify-content: space-between; }
 .dash-head h2 { margin: 0; font-size: 20px; }
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.card { background: #1c2027; border: 1px solid #2a2e37; border-radius: 12px; padding: 14px; }
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .card h3 { margin: 0 0 10px; font-size: 14px; }
 .stat { text-align: center; }
 .stat-num { font-size: 24px; font-weight: 700; }
-.stat-num.accent { color: #f97316; }
+.stat-num.accent { color: var(--accent); }
 .stat-num.green { color: #22c55e; }
-.stat-label { font-size: 11px; color: #9aa0aa; margin-top: 4px; }
+.stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .row-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .row-between h3 { margin: 0; }
-.progress { height: 8px; background: #2a2e37; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
-.progress-fill { height: 100%; background: #f97316; border-radius: 4px; transition: width 0.3s; }
-.progress-fill.grad { background: linear-gradient(90deg, #f97316, #22c55e); }
+.progress { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+.progress-fill.grad { background: linear-gradient(90deg, var(--accent), #22c55e); }
 .btn-row { display: flex; gap: 8px; }
-.btn { background: #f97316; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.btn.secondary { background: #2a2e37; color: #e8eaed; }
+.btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn.secondary { background: var(--border); color: var(--text); }
 .chart { width: 100%; height: 70px; display: block; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .donut-row { display: flex; align-items: center; gap: 12px; }
@@ -268,14 +268,14 @@ onUnmounted(() => {
 .kv { display: flex; justify-content: space-between; font-size: 13px; line-height: 2; }
 .bars { display: flex; align-items: flex-end; gap: 6px; height: 80px; }
 .bar-col { flex: 1; display: flex; align-items: flex-end; height: 100%; }
-.bar { width: 100%; background: #f97316; border-radius: 4px; min-height: 4px; }
-.bar-labels { display: flex; gap: 6px; font-size: 10px; color: #9aa0aa; margin-top: 4px; }
+.bar { width: 100%; background: var(--accent); border-radius: 4px; min-height: 4px; }
+.bar-labels { display: flex; gap: 6px; font-size: 10px; color: var(--text-muted); margin-top: 4px; }
 .bar-labels span { flex: 1; text-align: center; }
 .act { display: flex; gap: 8px; align-items: center; font-size: 12px; line-height: 2; }
 .act-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .green { color: #22c55e; }
 .warn { color: #f59e0b; }
-.muted { color: #9aa0aa; }
+.muted { color: var(--text-muted); }
 .small { font-size: 11px; }
 .font-normal { font-weight: 400; }
 </style>
