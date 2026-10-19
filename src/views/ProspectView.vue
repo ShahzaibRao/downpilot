@@ -455,10 +455,10 @@ function onQueueUpdate(tasks: QueueTask[]) {
 .view { max-width: 860px; }
 .url-wrap {
   display: flex; align-items: center; gap: 8px;
-  background: #24282f; border: 1px solid #2a2e37; border-radius: 8px;
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
   padding: 0 8px 0 12px;
 }
-.url-wrap:focus-within { border-color: #f97316; }
+.url-wrap:focus-within { border-color: var(--accent); }
 .url-wrap .url-input { border: none !important; background: transparent !important; }
 .plat-badge {
   font-size: 11px; font-weight: 700; color: #fff;
@@ -466,7 +466,7 @@ function onQueueUpdate(tasks: QueueTask[]) {
   text-transform: capitalize; flex-shrink: 0;
 }
 .card {
-  background: #1e1e2e;
+  background: var(--bg-card);
   border: 1px solid #333;
   border-radius: 8px;
   padding: 14px;
@@ -517,7 +517,7 @@ function onQueueUpdate(tasks: QueueTask[]) {
   margin-bottom: 12px;
 }
 .stat {
-  background: #1e1e2e;
+  background: var(--bg-card);
   border: 1px solid #333;
   border-radius: 8px;
   padding: 10px 16px;
