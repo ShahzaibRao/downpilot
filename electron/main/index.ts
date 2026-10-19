@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, Notification } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, Notification, Menu } from 'electron'
 import { initUpdater, checkForUpdates, stopUpdater } from '../updater'
 import { NotificationStore } from '../notifications'
 import { spawn, execFile } from 'node:child_process'
@@ -125,6 +125,8 @@ ipcMain.handle('deps:fetch', async (event, only?: string[]) => {
 })
 
 app.whenReady().then(() => {
+  // Remove the default application menu (File/Edit/View/Window) — cleaner look
+  Menu.setApplicationMenu(null)
   createWindow()
   // Phase 4: auto-updater (GitHub Releases)
   if (mainWindow) initUpdater(mainWindow)
