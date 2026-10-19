@@ -697,7 +697,7 @@ async function checkUpdates() {
   flex: 1; background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
   border-radius: 8px; padding: 10px 12px; font-size: 14px;
 }
-.url-input:focus { outline: none; border-color: #2f6fed; }
+.url-input:focus { outline: none; border-color: #f97316; }
 textarea.url-input { width: 100%; resize: vertical; font-family: monospace; font-size: 12px; }
 .quality {
   background: #24282f; border: 1px solid #2a2e37; color: #e8eaed;
