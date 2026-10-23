@@ -10,26 +10,6 @@ import type { Tools } from '../download/engine'
 
 const execFileAsync = promisify(execFile)
 
-/** Log with [prospect] prefix — visible in terminal via `npm run dev`. */
-function log(...args: unknown[]): void {
-  console.log('[prospect]', ...args)
-}
-
-/** Log a full exec failure for tracing (command + stdout tail + stderr tail). */
-function logExecFailure(label: string, e: any): void {
-  const stdout = (e.stdout || '').toString().trim()
-  const stderr = (e.stderr || '').toString().trim()
-  log(`${label} FAILED:`)
-  // last 5 lines of stderr (where the real error usually is)
-  const errLines = stderr.split('\n').filter((l: string) => l.trim()).slice(-5)
-  for (const l of errLines) log(`  stderr: ${l.trim()}`)
-  const outLines = stdout.split('\n').filter((l: string) => l.trim()).slice(-3)
-  for (const l of outLines) log(`  stdout: ${l.trim().slice(0, 200)}`)
-  if (!errLines.length && !outLines.length) {
-    log(`  message: ${(e.message || '').toString().slice(0, 500)}`)
-  }
-}
-
 export interface ProspectItem {
   id: string
   title: string
@@ -121,7 +101,6 @@ export async function listSnapchat(
   const user = m[1]
   const pageUrl = `https://www.snapchat.com/@${user}`
 
-  log(`listing snapchat via __NEXT_DATA__: ${pageUrl}`)
 
   // Use curl (not Node fetch) — handles proxies, DNS, TLS better on Windows.
   // (Smart Mode proxy support via -x flag.)
@@ -222,7 +201,6 @@ export async function listSnapchat(
     throw new Error(`@${user}: Snapchat web par koi public content nahi — shayad app-only hai`)
   }
 
-  log(`snapchat __NEXT_DATA__: ${items.length} items (stories + spotlight)`)
   return items
 }
 export async function listItemsGalleryDl(
@@ -253,7 +231,6 @@ export async function listItemsGalleryDl(
     // (Profile URL includes text-only tweets which we don't want.)
     const mediaUrl = url.replace(/\/$/, '') + '/media'
     targetUrl = mediaUrl
-    log(`x: using media tab: ${mediaUrl}`)
   } else if (platform === 'tiktok') {
     printFmt = '{id} :: {title}'
   } else if (platform === 'snapchat') {
@@ -281,11 +258,9 @@ export async function listItemsGalleryDl(
         windowsHide: true
       })
       stdout += out + '\n'
-      if (u !== targetUrl) log(`gallery-dl extra URL (${u}): got output`)
     } catch (e) {
       // Extra URLs (reels tab) may fail — don't break the main listing.
       if (u === targetUrl) throw e
-      log(`gallery-dl extra URL failed (skipped): ${u} — ${(e as Error).message.slice(0, 100)}`)
     }
   }
 
@@ -309,7 +284,6 @@ export async function listItemsGalleryDl(
       if (items.length >= limit) break
     }
   }
-  log(`gallery-dl: ${items.length} items parsed for ${platform}`)
   return items
 }
 
@@ -332,7 +306,6 @@ export function parseGalleryPrint(parts: string[], platform: string, username: s
     // Debug: log the raw pinned values for first item
     if (!_pinDebugLogged) {
       _pinDebugLogged = true
-      console.log(`[prospect] IG pinned debug: pinned="${pinned}" is_pinned="${isPinned}" → isPin=${isPin}`)
     }
     return {
       id: `ig_${postId}`,
@@ -423,13 +396,10 @@ export async function listWithFallback(
   // __NEXT_DATA__ IDs, causing duplicate downloads. If __NEXT_DATA__ fails,
   // report the error clearly.
   if (platform === 'snapchat') {
-    log(`listing ${platform} via __NEXT_DATA__: ${url}`)
     try {
       const items = await listSnapchat(url, limit, cookiesFile, proxyUrl)
-      log(`snapchat OK: ${items.length} items`)
       return items
     } catch (e) {
-      logExecFailure('snapchat __NEXT_DATA__', e)
       throw new Error(`${platform}: __NEXT_DATA__ failed: ${cleanError((e as Error).message)}`)
     }
   }
@@ -440,17 +410,13 @@ export async function listWithFallback(
 
   const tryYtDlp = async (): Promise<ProspectItem[]> => {
     if (!tools.ytdlp) throw new Error('yt-dlp not available')
-    log(`listing ${platform} via yt-dlp: ${url}`)
     const items = await listItems(tools.ytdlp, url, limit, cookiesFile, proxyUrl)
-    log(`yt-dlp OK: ${items.length} items`)
     return items
   }
 
   const tryGdl = async (): Promise<ProspectItem[]> => {
     if (!tools.gallerydl) throw new Error('gallery-dl not available')
-    log(`listing ${platform} via gallery-dl: ${url}`)
     const items = await listItemsGalleryDl(tools.gallerydl, url, platform, limit, cookiesFile, proxyUrl)
-    log(`gallery-dl OK: ${items.length} items`)
     return items
   }
 
@@ -462,26 +428,22 @@ export async function listWithFallback(
       return await tryGdl()
     } catch (e) {
       firstErr = e as Error
-      logExecFailure('gallery-dl', e)
     }
     try {
       return await tryYtDlp()
     } catch (e) {
       secondErr = e as Error
-      logExecFailure('yt-dlp', e)
     }
   } else {
     try {
       return await tryYtDlp()
     } catch (e) {
       firstErr = e as Error
-      logExecFailure('yt-dlp', e)
     }
     try {
       return await tryGdl()
     } catch (e) {
       secondErr = e as Error
-      logExecFailure('gallery-dl', e)
     }
   }
 
@@ -555,7 +517,6 @@ export class ProspectScheduler {
     })
     // perf/stagger-checks: cap the batch — rest stay due for the next tick.
     const batch = due.slice(0, MAX_PER_TICK)
-    log(`checkDue: ${due.length} prospect(s) due, checking ${batch.length} this tick (oldest first, ${GAP_MS / 1000}s gap)`)
     this.running = true
     const results: CheckResult[] = []
     try {
@@ -579,7 +540,6 @@ export class ProspectScheduler {
     try {
       const store = this.deps.getStore()
       const prospects = store.list().filter((p) => p.status === 'ok')
-      log(`checkAll: ${prospects.length} prospect(s) to check`)
       for (const p of prospects) {
         const r = await this.doCheckOne(p.id)
         if (r) results.push(r)
@@ -594,7 +554,6 @@ export class ProspectScheduler {
   /** Check a single prospect (per-prospect "Check" button). Skips if a check is already running. */
   async checkOne(prospectId: string): Promise<CheckResult | null> {
     if (this.running) {
-      log(`checkOne ${prospectId}: skipped (another check running)`)
       return null
     }
     this.running = true
@@ -610,15 +569,12 @@ export class ProspectScheduler {
     const store = this.deps.getStore()
     const p = store.get(prospectId)
     if (!p) return null
-    log(`checking "${p.name}" (${p.links.length} link(s))`)
     try {
       const r = await this.checkProspect(p)
-      log(`"${p.name}": ${r.newItems} new, ${r.queued} queued${r.error ? ` (warnings: ${r.error})` : ''}`)
       store.recordCheck(p.id, true, undefined, r.error)
       return r
     } catch (e) {
       const msg = cleanError((e as Error).message)
-      log(`"${p.name}" FAILED: ${msg}`)
       store.recordCheck(p.id, false, msg)
       return { prospectId: p.id, prospectName: p.name, newItems: 0, queued: 0, error: msg }
     }
@@ -640,7 +596,6 @@ export class ProspectScheduler {
       const hasInstagram = p.links.some(l => l.platform === 'instagram')
       const firstLimit = hasInstagram ? 6 : 3
       maxNew = Math.min(maxNew, firstLimit)
-      log(`"${p.name}": first check — limiting to ${maxNew} latest items`)
     }
     const outDir = path.join(this.deps.getDownloadDir(), 'prospects', p.folder)
 
@@ -661,7 +616,6 @@ export class ProspectScheduler {
     for (const link of p.links) {
       // Skip paused links (auto-paused after 3 fails, or manually paused)
       if (link.linkStatus === 'paused') {
-        log(`"${p.name}": skipping paused link (${link.platform})`)
         continue
       }
       // Per-link limit (Rao 2026-10-18): each platform gets its own quota.
@@ -690,20 +644,17 @@ export class ProspectScheduler {
             }
             return db.localeCompare(da)
           })
-          log(`x: sorted ${items.length} items by date (newest first)`)
         }
 
         for (const item of items) {
           const alreadySeen = seen.has(p.id, item.id)
           const alreadyQueued = queuedIds.has(item.id)
           if (alreadySeen || alreadyQueued) {
-            if (alreadySeen) log(`skip (seen): ${item.id}`)
             continue
           }
           // Instagram pinned posts: skip download (they're always on top),
           // but mark as seen so they're not re-scanned every time.
           if (item.isPinned) {
-            log(`skipping pinned post: ${item.id}`)
             seen.mark(p.id, item.id)
             continue
           }
@@ -723,7 +674,6 @@ export class ProspectScheduler {
               prospectItemId: item.id
             })
             queuedCount++
-            if (isSnapStory) log(`snapchat story queued (bypasses limit): ${item.title.slice(0, 40)}`)
           } else if (isFirstCheck) {
             // First check: establish baseline — mark older history as seen
             // so future checks only pick up truly NEW content.
@@ -742,7 +692,6 @@ export class ProspectScheduler {
         // Per-link fail tracking (3 fails → auto-pause THE LINK)
         this.deps.getStore().recordLinkCheck(p.id, link.id, false, errMsg)
         linkResults.push({ linkId: link.id, platform: link.platform, ok: false, error: errMsg })
-        log(`"${p.name}": link ${link.platform} failed: ${errMsg}`)
       }
     }
 
