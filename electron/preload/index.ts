@@ -124,5 +124,6 @@ contextBridge.exposeInMainWorld('dpApi', {
   },
 
   // ---- stats (Phase 5) ----
-  statsGet: () => ipcRenderer.invoke('stats:get')
+  statsGet: () => ipcRenderer.invoke('stats:get'),
+  statsReset: () => ipcRenderer.invoke('stats:reset')
 })
