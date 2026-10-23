@@ -258,6 +258,7 @@ export interface DpApi {
   onUpdaterStatus(cb: (s: any) => void): () => void
   // stats (Phase 5)
   statsGet(): Promise<any>
+  statsReset(): Promise<boolean>
 }
 
 declare global {
