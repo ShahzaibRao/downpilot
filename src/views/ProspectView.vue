@@ -17,9 +17,58 @@
         </button>
         <button class="btn secondary small" @click="pauseAll" title="Pause all prospects">⏸ Pause all</button>
         <button class="btn secondary small" @click="resumeAll" title="Resume all prospects">▶ Resume all</button>
+        <button class="btn secondary small" @click="showExportModal = true" title="Save prospects to a file (backup or share)">📤 Export</button>
+        <button class="btn secondary small" @click="pickImport" title="Import prospects from a file">📥 Import</button>
       </div>
     </div>
     <div v-if="checkMsg" class="muted" style="font-size: 13px; margin-bottom: 8px;">{{ checkMsg }}</div>
+
+    <!-- data-safety banner (fix/durable-saves): never silently show empty -->
+    <div v-if="storeStatus.loadFailed" class="banner banner-error">
+      ⚠️ Prospects file corrupt hai aur koi backup bhi nahi mila! Data wapas lane ke liye
+      <button class="btn secondary small" @click="pickImport">📥 Import se restore karo</button>
+      ya AppData se backup file dhoondo.
+    </div>
+    <div v-else-if="storeStatus.restoredFrom && showRestoredBanner" class="banner banner-info">
+      ℹ️ Prospects backup se restore hue ({{ storeStatus.restoredFrom }}).
+      Apni safety ke liye abhi <button class="btn secondary small" @click="showExportModal = true">📤 Export</button> kar lo.
+      <button class="btn secondary small" @click="showRestoredBanner = false">✕</button>
+    </div>
+
+    <!-- export choice modal -->
+    <div v-if="showExportModal" class="modal-overlay" @click.self="showExportModal = false">
+      <div class="modal-card">
+        <h3 style="margin: 0 0 8px;">Export prospects</h3>
+        <p class="muted" style="font-size: 13px; margin-bottom: 16px;">
+          Cookies aur proxies kabhi export nahi hote.
+        </p>
+        <button class="btn primary" style="width: 100%; margin-bottom: 8px;" @click="doExport('backup')">
+          📦 Full backup — prospects + seen history (restore / naye system ke liye)
+        </button>
+        <button class="btn secondary" style="width: 100%; margin-bottom: 8px;" @click="doExport('share')">
+          🤝 Share only — sirf prospects (kisi ko dene ke liye, seen history nahi)
+        </button>
+        <button class="btn secondary" style="width: 100%;" @click="showExportModal = false">Cancel</button>
+        <p v-if="exportMsg" class="muted" style="font-size: 13px; margin-top: 8px;">{{ exportMsg }}</p>
+      </div>
+    </div>
+
+    <!-- import preview modal -->
+    <div v-if="importPreview" class="modal-overlay" @click.self="importPreview = null">
+      <div class="modal-card">
+        <h3 style="margin: 0 0 8px;">Import prospects</h3>
+        <p class="muted" style="font-size: 13px; margin-bottom: 8px;">
+          {{ importPreview.count }} prospects mile ({{ importPreview.mode === 'share' ? 'share file' : 'backup file' }}{{ importPreview.hasSeen ? ' + seen history' : '' }}).
+          Jo pehle se hain wo skip ho jayenge, sirf naye add honge.
+        </p>
+        <div style="max-height: 200px; overflow-y: auto; margin-bottom: 12px;">
+          <div v-for="name in importPreview.names" :key="name" style="font-size: 13px; padding: 2px 0;">• {{ name }}</div>
+        </div>
+        <button class="btn primary" style="width: 100%; margin-bottom: 8px;" @click="applyImport">Import karo</button>
+        <button class="btn secondary" style="width: 100%;" @click="importPreview = null">Cancel</button>
+        <p v-if="importMsg" class="muted" style="font-size: 13px; margin-top: 8px;">{{ importMsg }}</p>
+      </div>
+    </div>
 
     <!-- dashboard stats -->
     <div v-if="prospects.length > 0" class="stats">
@@ -304,6 +353,13 @@ const expanded = ref<Set<string>>(new Set())
 const selected = ref<Set<string>>(new Set())
 const creatorStats = ref<Record<string, number>>({})
 const todayDownloads = ref(0)
+// Data-safety (fix/durable-saves): store health + import/export state.
+const storeStatus = ref<{ loadedOk: boolean; restoredFrom: string | null; loadFailed: boolean }>({ loadedOk: true, restoredFrom: null, loadFailed: false })
+const showRestoredBanner = ref(true)
+const showExportModal = ref(false)
+const exportMsg = ref('')
+const importPreview = ref<{ count: number; names: string[]; mode: string; hasSeen: boolean } | null>(null)
+const importMsg = ref('')
 
 async function loadCreatorStats() {
   try {
@@ -565,6 +621,60 @@ async function load() {
   try {
     prospects.value = await window.dpApi.prospectsList()
   } catch { /* ignore */ }
+  try {
+    storeStatus.value = await window.dpApi.prospectsStatus()
+  } catch { /* ignore */ }
+}
+
+async function doExport(mode: 'backup' | 'share') {
+  exportMsg.value = ''
+  try {
+    const r = await window.dpApi.prospectsExport(mode)
+    if (r.cancelled) {
+      showExportModal.value = false
+      return
+    }
+    if (!r.ok) {
+      exportMsg.value = r.error || 'Export fail ho gaya.'
+      return
+    }
+    exportMsg.value = `${r.count} prospects export ho gaye ✓ (${r.path})`
+    setTimeout(() => { showExportModal.value = false; exportMsg.value = '' }, 3000)
+  } catch (e) {
+    exportMsg.value = (e as Error).message
+  }
+}
+
+async function pickImport() {
+  importMsg.value = ''
+  try {
+    const r = await window.dpApi.prospectsImportPick()
+    if (r.cancelled) return
+    if (!r.ok) {
+      importMsg.value = r.error || 'Import fail ho gaya.'
+      importPreview.value = { count: 0, names: [], mode: '', hasSeen: false }
+      return
+    }
+    importPreview.value = { count: r.count ?? 0, names: r.names ?? [], mode: r.mode ?? '', hasSeen: !!r.hasSeen }
+  } catch (e) {
+    importMsg.value = (e as Error).message
+  }
+}
+
+async function applyImport() {
+  importMsg.value = ''
+  try {
+    const r = await window.dpApi.prospectsImportApply()
+    if (!r.ok) {
+      importMsg.value = r.error || 'Import fail ho gaya.'
+      return
+    }
+    importMsg.value = `${r.added} add hue, ${r.skipped} skip hue (pehle se the)${r.seenImported ? `, ${r.seenImported} seen entries` : ''} ✓`
+    await load()
+    setTimeout(() => { importPreview.value = null; importMsg.value = '' }, 4000)
+  } catch (e) {
+    importMsg.value = (e as Error).message
+  }
 }
 
 async function addProspect() {
@@ -815,6 +925,11 @@ function onQueueUpdate(tasks: QueueTask[]) {
 }
 .folder-btn:hover { border-color: var(--accent); background: var(--bg-hover); }
 .header-actions { display: flex; gap: 6px; }
+.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.banner-error { background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; }
+.banner-info { background: rgba(249, 115, 22, 0.1); border: 1px solid var(--accent); }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; max-width: 480px; width: calc(100% - 48px); }
 .check-info { color: var(--text-muted); }
 .check-info strong { color: var(--text); }
 .health-text {

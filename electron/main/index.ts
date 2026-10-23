@@ -540,7 +540,14 @@ ipcMain.handle('stats:get', async () => {
   stats.topSpeed = sessionTopSpeed
   ;(stats as any).speedHistory = speedHistory
   ;(stats as any).currentSpeed = speedHistory[speedHistory.length - 1] || 0
+  // Store health (fix/durable-saves): dashboard banner reads this.
+  ;(stats as any).storeStatus = getStatsStore().status()
   return stats
+})
+
+ipcMain.handle('stats:reset', async () => {
+  getStatsStore().reset()
+  return true
 })
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
@@ -649,6 +656,157 @@ ipcMain.handle('prospects:openFolder', async (_event, id: string) => {
   } catch {
     return false
   }
+})
+
+// ---- IPC: prospects import/export (fix/durable-saves) ----
+// Export file format (v1): { format: 'downpilot-prospects', version, exportedAt,
+// mode: 'backup'|'share', prospects: [{id,name,folder,quality,intervalMinutes,links}],
+// seen?: { prospectId: [itemId...] } } — seen only in backup mode (migration +
+// restore without re-downloads). Cookies/proxies are NEVER exported.
+
+interface ExportProspect {
+  id: string
+  name: string
+  folder: string
+  quality: Quality
+  intervalMinutes: number
+  links: Array<{ url: string; platform: string }>
+}
+
+interface ProspectsExportFile {
+  format: string
+  version: number
+  exportedAt: string
+  mode: 'backup' | 'share'
+  prospects: ExportProspect[]
+  seen?: Record<string, string[]>
+}
+
+/** Parsed import waiting for user confirmation (picked but not yet applied). */
+let pendingImport: ProspectsExportFile | null = null
+
+ipcMain.handle('prospects:export', async (_event, mode: 'backup' | 'share') => {
+  try {
+    const store = getProspectStore()
+    const prospects: ExportProspect[] = store.list().map((p) => ({
+      id: p.id,
+      name: p.name,
+      folder: p.folder,
+      quality: p.quality,
+      intervalMinutes: p.intervalMinutes,
+      links: p.links.map((l) => ({ url: l.url, platform: l.platform }))
+    }))
+    const out: ProspectsExportFile = {
+      format: 'downpilot-prospects',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      mode,
+      prospects
+    }
+    if (mode === 'backup') {
+      // Group seen keys by prospect id so import can remap them.
+      const seen: Record<string, string[]> = {}
+      for (const key of getSeenStore().allKeys()) {
+        const idx = key.indexOf(':')
+        if (idx <= 0) continue
+        const pid = key.slice(0, idx)
+        const item = key.slice(idx + 1)
+        if (!seen[pid]) seen[pid] = []
+        seen[pid].push(item)
+      }
+      out.seen = seen
+    }
+    const stamp = new Date().toISOString().slice(0, 10)
+    const res = await dialog.showSaveDialog({
+      title: mode === 'backup' ? 'Save prospects backup' : 'Share prospects',
+      defaultPath: `downpilot-prospects-${mode}-${stamp}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (res.canceled || !res.filePath) return { ok: false, cancelled: true }
+    // fsync so the export survives a power cut too.
+    const fd = fs.openSync(res.filePath, 'w')
+    try {
+      fs.writeFileSync(fd, JSON.stringify(out, null, 2))
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    return { ok: true, path: res.filePath, count: prospects.length }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+})
+
+ipcMain.handle('prospects:importPick', async () => {
+  try {
+    const res = await dialog.showOpenDialog({
+      title: 'Import prospects',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (res.canceled || res.filePaths.length === 0) return { ok: false, cancelled: true }
+    const raw = fs.readFileSync(res.filePaths[0], 'utf8')
+    const parsed = JSON.parse(raw)
+    if (parsed?.format !== 'downpilot-prospects' || !Array.isArray(parsed?.prospects)) {
+      return { ok: false, error: 'Ye DownPilot prospects file nahi hai.' }
+    }
+    const prospects = (parsed.prospects as any[]).filter(
+      (p) => p?.name && Array.isArray(p?.links) && p.links.length > 0
+    )
+    pendingImport = {
+      format: parsed.format,
+      version: parsed.version ?? 1,
+      exportedAt: parsed.exportedAt ?? '',
+      mode: parsed.mode === 'share' ? 'share' : 'backup',
+      prospects: prospects.map((p: any) => ({
+        id: String(p.id ?? ''),
+        name: String(p.name),
+        folder: String(p.folder ?? ''),
+        quality: p.quality ?? 'best',
+        intervalMinutes: p.intervalMinutes ?? 60,
+        links: (p.links as any[]).filter((l) => l?.url).map((l) => ({ url: String(l.url), platform: String(l.platform ?? '') }))
+      })),
+      seen: parsed.mode === 'share' ? undefined : (parsed.seen as Record<string, string[]> | undefined)
+    }
+    return {
+      ok: true,
+      count: pendingImport.prospects.length,
+      names: pendingImport.prospects.map((p) => p.name),
+      mode: pendingImport.mode,
+      hasSeen: !!pendingImport.seen
+    }
+  } catch (e) {
+    return { ok: false, error: `File parhi nahi gayi: ${(e as Error).message}` }
+  }
+})
+
+ipcMain.handle('prospects:importApply', async () => {
+  if (!pendingImport) return { ok: false, error: 'Koi import pending nahi hai.' }
+  const data = pendingImport
+  pendingImport = null
+  try {
+    const store = getProspectStore()
+    const result = store.importProspects(data.prospects)
+    // Remap seen data through old→new IDs (backup mode only; skipped
+    // prospects' seen data is dropped — their items stay as-is).
+    let seenImported = 0
+    if (data.seen) {
+      const keys: string[] = []
+      for (const [oldId, itemIds] of Object.entries(data.seen)) {
+        const newId = result.idMap.get(oldId)
+        if (!newId) continue
+        for (const itemId of itemIds || []) keys.push(`${newId}:${itemId}`)
+      }
+      seenImported = getSeenStore().importKeys(keys)
+    }
+    return { ok: true, added: result.added, skipped: result.skipped, seenImported }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+})
+
+ipcMain.handle('prospects:status', async () => {
+  return getProspectStore().status()
 })
 
 ipcMain.handle('prospects:checkNow', async () => {

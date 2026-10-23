@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { durableLoad, durableSave } from './store-utils'
 
 export type ProxyProtocol = 'http' | 'https' | 'socks4' | 'socks5'
 
@@ -55,11 +56,17 @@ function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json')
 }
 
-/** Tiny JSON settings store. */
+/** Tiny JSON settings store (durable: fsync + backups + fallback load). */
 export function getSettings(): Settings {
-  try {
-    const raw = fs.readFileSync(settingsPath(), 'utf8')
-    const parsed = { ...defaults(), ...JSON.parse(raw) }
+  const loaded = durableLoad<Record<string, unknown>>(
+    settingsPath(),
+    (v): v is Record<string, unknown> => !!v && typeof v === 'object'
+  )
+  const raw: Record<string, unknown> = loaded ? (loaded.data as Record<string, unknown>) : {}
+  if (loaded?.restoredFrom) {
+    console.warn(`[settings] restored from backup: ${loaded.restoredFrom}`)
+  }
+  const parsed = { ...defaults(), ...raw }
     parsed.maxConcurrent = Math.min(8, Math.max(1, Math.floor(parsed.maxConcurrent) || 1))
     parsed.maxNewPerCheck = Math.min(50, Math.max(1, Math.floor(parsed.maxNewPerCheck) || 20))
     // backfill smartMode for settings saved before Phase 2c
@@ -69,22 +76,21 @@ export function getSettings(): Settings {
     if (sm && typeof sm === 'object' && 'proxy' in sm && !('proxies' in sm)) {
       const old = sm.proxy as { host?: string; port?: number; username?: string; password?: string }
       if (old?.host) {
+        const proxy = {
+          id: 'proxy-' + Date.now().toString(36),
+          name: 'My proxy',
+          protocol: 'http' as const,
+          host: old.host ?? '',
+          port: old.port ?? 8080,
+          username: old.username ?? '',
+          password: old.password ?? ''
+        }
         parsed.smartMode = {
           enabled: !!sm.enabled,
-          proxies: [{
-            id: 'proxy-' + Date.now().toString(36),
-            name: 'My proxy',
-            protocol: 'http',
-            host: old.host ?? '',
-            port: old.port ?? 8080,
-            username: old.username ?? '',
-            password: old.password ?? ''
-          }],
-          activeProxyId: null,
+          proxies: [proxy],
+          selectedProxyIds: [proxy.id],
           platforms: Array.isArray(sm.platforms) ? (sm.platforms as string[]) : ['all']
         }
-        const p = parsed.smartMode.proxies[0]
-        parsed.smartMode.activeProxyId = p.id
       } else {
         parsed.smartMode = defaults().smartMode
       }
@@ -103,9 +109,6 @@ export function getSettings(): Settings {
     parsed.smartMode.selectedProxyIds = (parsed.smartMode.selectedProxyIds as string[]).filter((id: string) => ids.has(id))
     if (!Array.isArray(parsed.smartMode.platforms)) parsed.smartMode.platforms = ['all']
     return parsed
-  } catch {
-    return defaults()
-  }
 }
 
 export function setSettings(patch: Partial<Settings>): Settings {
@@ -113,7 +116,7 @@ export function setSettings(patch: Partial<Settings>): Settings {
   next.maxConcurrent = Math.min(8, Math.max(1, Math.floor(next.maxConcurrent) || 1))
   next.maxNewPerCheck = Math.min(50, Math.max(1, Math.floor(next.maxNewPerCheck) || 20))
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true })
-  fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2))
+  durableSave(settingsPath(), JSON.stringify(next, null, 2))
   fs.mkdirSync(next.downloadDir, { recursive: true })
   return next
 }

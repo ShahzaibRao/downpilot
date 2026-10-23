@@ -229,6 +229,10 @@ export interface DpApi {
   prospectsUnpause(id: string): Promise<boolean>
   prospectsUnpauseLink(prospectId: string, linkId: string): Promise<boolean>
   prospectsOpenFolder(id: string): Promise<boolean>
+  prospectsExport(mode: 'backup' | 'share'): Promise<{ ok: boolean; cancelled?: boolean; path?: string; count?: number; error?: string }>
+  prospectsImportPick(): Promise<{ ok: boolean; cancelled?: boolean; count?: number; names?: string[]; mode?: string; hasSeen?: boolean; error?: string }>
+  prospectsImportApply(): Promise<{ ok: boolean; added?: number; skipped?: number; seenImported?: number; error?: string }>
+  prospectsStatus(): Promise<{ loadedOk: boolean; restoredFrom: string | null; loadFailed: boolean }>
   prospectsCheckNow(): Promise<CheckResult[]>
   prospectsCheckOne(id: string): Promise<CheckResult | null>
   prospectsUpdateLink(prospectId: string, linkId: string, newUrl: string): Promise<ProspectLink>
@@ -254,6 +258,7 @@ export interface DpApi {
   onUpdaterStatus(cb: (s: any) => void): () => void
   // stats (Phase 5)
   statsGet(): Promise<any>
+  statsReset(): Promise<boolean>
 }
 
 declare global {
