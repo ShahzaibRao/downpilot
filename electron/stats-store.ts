@@ -44,11 +44,34 @@ export class StatsStore {
   private file: string
   private data: StatsData
   private loadedOk = false
+  /** Backup path data was restored from on load (null = main file was fine). */
+  private restoredFrom: string | null = null
+  /** True when main file AND all backups failed. */
+  private loadFailed = false
 
   constructor(userDataDir: string) {
     this.file = path.join(userDataDir, 'stats.json')
     this.data = empty()
     this.load()
+  }
+
+  /** Health state for the UI banner. */
+  status(): { loadedOk: boolean; restoredFrom: string | null; loadFailed: boolean } {
+    return { loadedOk: this.loadedOk, restoredFrom: this.restoredFrom, loadFailed: this.loadFailed }
+  }
+
+  /**
+   * User-initiated reset after a total load failure (stats file + all backups
+   * unreadable). Stats are derived data — unlike prospects, they rebuild from
+   * future downloads. The corrupt file is preserved via backup rotation on
+   * this save, so nothing is silently destroyed.
+   */
+  reset(): void {
+    this.data = empty()
+    this.loadedOk = true
+    this.loadFailed = false
+    this.restoredFrom = null
+    this.save()
   }
 
   private load(): void {
@@ -58,6 +81,7 @@ export class StatsStore {
       this.data = { ...empty(), ...loaded.data }
       this.loadedOk = true
       if (loaded.restoredFrom) {
+        this.restoredFrom = loaded.restoredFrom
         console.warn(`[stats] restored from backup: ${loaded.restoredFrom}`)
         durableSave(this.file, JSON.stringify(this.data), false)
       }
@@ -68,6 +92,7 @@ export class StatsStore {
       // All copies unreadable — refuse saves (never wipe accumulated stats).
       console.error('[stats] load failed: main file and all backups unreadable')
       this.loadedOk = false
+      this.loadFailed = true
     }
   }
 
