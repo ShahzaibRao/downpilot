@@ -53,6 +53,11 @@ export interface CheckResult {
 /** 60 minutes default; scheduler ticks every 5 min and checks due prospects. */
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000
 const TICK_MS = 5 * 60 * 1000
+/** perf/stagger-checks: cap automatic-tick batch so 70+ prospects don't spike CPU. */
+const MAX_PER_TICK = 10
+/** perf/stagger-checks: idle gap between prospects in one tick. */
+const GAP_MS = 5 * 1000
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** Max new items per prospect per check (configurable later). */
 export const DEFAULT_MAX_NEW = 20
 
@@ -540,12 +545,23 @@ export class ProspectScheduler {
       return now - new Date(p.lastCheck).getTime() >= intervalMs
     })
     if (due.length === 0) return []
-    log(`checkDue: ${due.length} prospect(s) due`)
+    // perf/stagger-checks: oldest-first — never-checked first, then oldest
+    // lastCheck first. Fair rotation: skipped prospects stay oldest next tick.
+    due.sort((a, b) => {
+      if (!a.lastCheck && !b.lastCheck) return 0
+      if (!a.lastCheck) return -1
+      if (!b.lastCheck) return 1
+      return new Date(a.lastCheck).getTime() - new Date(b.lastCheck).getTime()
+    })
+    // perf/stagger-checks: cap the batch — rest stay due for the next tick.
+    const batch = due.slice(0, MAX_PER_TICK)
+    log(`checkDue: ${due.length} prospect(s) due, checking ${batch.length} this tick (oldest first, ${GAP_MS / 1000}s gap)`)
     this.running = true
     const results: CheckResult[] = []
     try {
-      for (const p of due) {
-        const r = await this.doCheckOne(p.id)
+      for (let i = 0; i < batch.length; i++) {
+        if (i > 0) await sleep(GAP_MS)
+        const r = await this.doCheckOne(batch[i].id)
         if (r) results.push(r)
       }
     } finally {
