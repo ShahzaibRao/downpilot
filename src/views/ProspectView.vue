@@ -192,6 +192,19 @@
             title="Grid view"
           >⊞</button>
         </div>
+        <span class="filter-sep"></span>
+        <button
+          class="filter-btn"
+          :disabled="filteredProspects.length === 0"
+          @click="toggleExpandAll"
+          :title="allExpanded ? 'Collapse all prospect cards' : 'Expand all prospect cards'"
+        >{{ allExpanded ? '▲ Collapse All' : '▼ Expand All' }}</button>
+        <button
+          class="filter-btn"
+          :disabled="filteredProspects.length === 0"
+          @click="toggleSelectAll"
+          :title="allSelected ? 'Deselect all visible prospects' : 'Select all visible prospects'"
+        >{{ allSelected ? '☐ Deselect All' : '☑ Select All' }}</button>
       </div>
     </div>
     <div v-if="filteredProspects.length === 0 && prospects.length > 0" class="card muted">
@@ -438,6 +451,32 @@ function toggleExpand(id: string) {
     expanded.value.delete(id)
   } else {
     expanded.value.add(id)
+  }
+}
+
+/** Expand All / Collapse All — expands only the currently visible (filtered) prospects. */
+const allExpanded = computed(() =>
+  filteredProspects.value.length > 0 && filteredProspects.value.every((p) => expanded.value.has(p.id))
+)
+
+function toggleExpandAll() {
+  if (allExpanded.value) {
+    expanded.value.clear()
+  } else {
+    filteredProspects.value.forEach((p) => expanded.value.add(p.id))
+  }
+}
+
+/** Select All / Deselect All — selects only the currently visible (filtered) prospects. */
+const allSelected = computed(() =>
+  filteredProspects.value.length > 0 && filteredProspects.value.every((p) => selected.value.has(p.id))
+)
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selected.value.clear()
+  } else {
+    filteredProspects.value.forEach((p) => selected.value.add(p.id))
   }
 }
 
