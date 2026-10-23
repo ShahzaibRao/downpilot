@@ -16,11 +16,9 @@ export type Quality = 'best' | '4k' | '1080p' | '720p' | '480p'
  */
 export function killTree(proc: ChildProcess | null): void {
   if (!proc || !proc.pid) {
-    console.log('[killTree] no process to kill (already gone)')
     return
   }
   const pid = proc.pid
-  console.log(`[killTree] killing process tree, pid=${pid}`)
   if (process.platform === 'win32') {
     // taskkill FIRST: /T kills the whole tree (yt-dlp + its ffmpeg child).
     // It must run before proc.kill() — once the parent is dead, taskkill
@@ -28,14 +26,12 @@ export function killTree(proc: ChildProcess | null): void {
     // ordering fixes).
     execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (err) => {
       if (err) {
-        console.log(`[killTree] taskkill FAILED: ${err.message} — falling back to proc.kill()`)
         try {
           proc.kill()
         } catch {
           /* already dead */
         }
       } else {
-        console.log(`[killTree] taskkill OK (pid=${pid})`)
       }
     })
   } else {
@@ -46,9 +42,7 @@ export function killTree(proc: ChildProcess | null): void {
     }
     try {
       process.kill(-pid, 'SIGKILL') // whole process group (needs detached: true at spawn)
-      console.log(`[killTree] process group SIGKILL sent (pid=${pid})`)
     } catch {
-      console.log(`[killTree] process group already gone (pid=${pid})`)
     }
   }
 }
@@ -532,7 +526,6 @@ export class DownloadJob {
       if (proxyUrl) headArgs.splice(1, 0, '-x', proxyUrl)
       const { stdout } = await execFileAsync('curl', headArgs, { timeout: 20000, windowsHide: true })
       const ct = (stdout.match(/content-type:\s*([^\r\n]+)/i) || [])[1]?.trim().toLowerCase() || ''
-      console.log(`[direct] Content-Type for ${this.url.slice(0, 60)}...: ${ct}`)
       if (ct.includes('jpeg') || ct.includes('jpg')) ext = 'jpg'
       else if (ct.includes('png')) ext = 'png'
       else if (ct.includes('webp')) ext = 'webp'
@@ -540,7 +533,6 @@ export class DownloadJob {
       else if (ct.includes('mp4')) ext = 'mp4'
       else if (ct.includes('quicktime')) ext = 'mov'
     } catch (e) {
-      console.log(`[direct] HEAD probe failed, defaulting to mp4: ${(e as Error).message}`)
     }
 
     // Use task ID for unique filename (Snapchat IDs are stable)
@@ -558,7 +550,6 @@ export class DownloadJob {
     try {
       await execFileAsync('curl', dlArgs, { timeout: 310000, windowsHide: true, maxBuffer: 2 * 1024 * 1024 * 1024 })
       const stat = fs.statSync(outPath)
-      console.log(`[direct] downloaded ${filename} (${stat.size} bytes, .${ext})`)
       this.onEvent({
         ...blankEvent(this.id),
         engine: 'direct',

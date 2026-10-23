@@ -162,7 +162,6 @@ export class QueueManager {
   pause(id: string): void {
     const task = this.tasks.get(id)
     if (!task) return
-    console.log(`[queue] pause ${id} (status=${task.status})`)
     if (task.status === 'running') {
       this.jobs.get(id)?.cancel()
       this.jobs.delete(id)
@@ -183,7 +182,6 @@ export class QueueManager {
    */
   shutdown(): void {
     if (this.jobs.size === 0) return
-    console.log(`[queue] shutdown: killing ${this.jobs.size} running job(s)`)
     for (const [id, job] of this.jobs) {
       try {
         job.cancel()

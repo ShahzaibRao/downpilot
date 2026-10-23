@@ -186,13 +186,11 @@ async function toolPaths(): Promise<ToolPaths> {
   if (toolPathsCache) {
     // If cache has neither engine, it was a bad detection — retry.
     if (!toolPathsCache.ytdlp && !toolPathsCache.gallerydl) {
-      console.log('[tools] cached detection had no engines, retrying...')
       toolPathsCache = null
     } else {
       return toolPathsCache
     }
   }
-  console.log('[tools] detecting via sidecar...')
   const { stdout } = await execFileAsync(
     sidecarPath(),
     ['detect', '--managed-dir', managedDir(), '--json'],
@@ -200,7 +198,6 @@ async function toolPaths(): Promise<ToolPaths> {
   )
   const results = (JSON.parse(stdout) as { results: Array<{ kind: string; found: boolean; path?: string }> }).results
   for (const r of results) {
-    console.log(`[tools] ${r.kind}: ${r.found ? r.path : 'NOT FOUND'}`)
   }
   const byKind = new Map(results.map((r) => [r.kind, r]))
   const pick = (kind: string): string | undefined => {
@@ -327,7 +324,6 @@ function getPotManager(): PotManager {
     potManager = new PotManager(
       potSourceDir(),
       async () => (await toolPaths()).deno ?? null,
-      (msg) => console.log(msg)
     )
   }
   return potManager
