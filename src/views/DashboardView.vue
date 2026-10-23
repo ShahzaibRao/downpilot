@@ -5,6 +5,15 @@
       <span class="muted">DownPilot v{{ version }}</span>
     </div>
 
+    <!-- data-safety banner (fix/durable-saves): stats file corrupt -->
+    <div v-if="stats.storeStatus?.loadFailed" class="banner banner-error">
+      ⚠️ Dashboard stats file corrupt hai aur koi backup bhi nahi mila — naye stats save nahi ho rahe!
+      <button class="btn secondary small" @click="resetStats">Stats reset karo (purani history nahi milegi, naye stats dobara banenge)</button>
+    </div>
+    <div v-else-if="stats.storeStatus?.restoredFrom" class="banner banner-info">
+      ℹ️ Dashboard stats backup se restore hue ({{ stats.storeStatus.restoredFrom }}).
+    </div>
+
     <!-- Stat cards -->
     <div class="cards">
       <div class="card stat">
@@ -214,6 +223,14 @@ async function load() {
   } catch { /* ignore */ }
 }
 
+async function resetStats() {
+  if (!confirm('Dashboard stats reset kar dun? Purani history wapas nahi milegi (file corrupt hai). Naye stats dobara banenge.')) return
+  try {
+    await window.dpApi.statsReset()
+    await load()
+  } catch { /* ignore */ }
+}
+
 function goQueue() { emit('goto', 'queue') }
 async function retryFailed() {
   // retry all failed queue tasks
@@ -243,6 +260,9 @@ onUnmounted(() => {
 .dash { display: flex; flex-direction: column; gap: 12px; }
 .dash-head { display: flex; align-items: baseline; justify-content: space-between; }
 .dash-head h2 { margin: 0; font-size: 20px; }
+.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.banner-error { background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; }
+.banner-info { background: rgba(249, 115, 22, 0.1); border: 1px solid var(--accent); }
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .card h3 { margin: 0 0 10px; font-size: 14px; }
