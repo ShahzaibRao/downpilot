@@ -29,7 +29,6 @@ export function initUpdater(window: BrowserWindow): void {
 
   // Only in packaged app (not dev)
   if (!app.isPackaged) {
-    console.log('[updater] skipped (dev mode)')
     return
   }
 
@@ -55,19 +54,16 @@ function setupUpdater(autoUpdater: any): void {
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
-    console.log('[updater] checking for update...')
     sendStatus('checking')
   })
 
   autoUpdater.on('update-available', (info: any) => {
     clearCheckTimeout()
-    console.log(`[updater] update available: ${info.version}`)
     sendStatus('available', info.version)
   })
 
   autoUpdater.on('update-not-available', () => {
     clearCheckTimeout()
-    console.log('[updater] up to date')
     sendStatus('up-to-date')
   })
 
@@ -77,7 +73,6 @@ function setupUpdater(autoUpdater: any): void {
 
   autoUpdater.on('update-downloaded', (info: any) => {
     clearCheckTimeout()
-    console.log(`[updater] downloaded: ${info.version}`)
     sendStatus('downloaded', info.version)
     // Prompt restart (never force)
     dialog.showMessageBox(mainWindow!, {
