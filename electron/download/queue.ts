@@ -1,6 +1,5 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import { DownloadJob, defaultScopeOpts, type Quality, type ProgressEvent, type Tools, type ScopeOpts, type CookieHooks, type PotHooks, type ProxyHooks } from './engine'
+import { durableLoad, durableSave } from '../store-utils'
 
 export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed'
 
@@ -320,39 +319,37 @@ export class QueueManager {
   }
 
   private load(): void {
-    try {
-      const raw = fs.readFileSync(this.filePath, 'utf8')
-      const data = JSON.parse(raw) as { tasks?: Task[]; maxConcurrent?: number }
-      if (typeof data.maxConcurrent === 'number') {
-        this.maxConcurrent = Math.min(8, Math.max(1, data.maxConcurrent))
-      }
-      for (const t of data.tasks ?? []) {
-        if (!t.id || !t.url) continue
-        // anything left 'running' died with the process → re-queue
-        if (t.status === 'running') t.status = 'queued'
-        // backfill fields added after the task was saved
-        if (!t.scope) t.scope = 'single'
-        if (typeof t.maxItems !== 'number') t.maxItems = 50
-        if (!t.order) t.order = 'latest'
-        if (!t.content) t.content = 'all'
-        this.tasks.set(t.id, t)
-      }
-    } catch {
-      /* no queue file yet */
+    const loaded = durableLoad<{ tasks?: Task[]; maxConcurrent?: number }>(
+      this.filePath,
+      (v): v is { tasks?: Task[]; maxConcurrent?: number } => !!v && typeof v === 'object'
+    )
+    if (!loaded) return // no queue file yet, or all copies unreadable (start empty)
+    const data = loaded.data
+    if (loaded.restoredFrom) {
+      console.warn(`[queue] restored from backup: ${loaded.restoredFrom}`)
+    }
+    if (typeof data.maxConcurrent === 'number') {
+      this.maxConcurrent = Math.min(8, Math.max(1, data.maxConcurrent))
+    }
+    for (const t of data.tasks ?? []) {
+      if (!t.id || !t.url) continue
+      // anything left 'running' died with the process → re-queue
+      if (t.status === 'running') t.status = 'queued'
+      // backfill fields added after the task was saved
+      if (!t.scope) t.scope = 'single'
+      if (typeof t.maxItems !== 'number') t.maxItems = 50
+      if (!t.order) t.order = 'latest'
+      if (!t.content) t.content = 'all'
+      this.tasks.set(t.id, t)
+    }
+    if (loaded.restoredFrom) {
+      // Write recovered data back to main (no rotation — corrupt main must
+      // never enter the backup chain).
+      durableSave(this.filePath, JSON.stringify({ tasks: [...this.tasks.values()], maxConcurrent: this.maxConcurrent }), false)
     }
   }
 
   private save(): void {
-    try {
-      fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-      const tmp = this.filePath + '.tmp'
-      fs.writeFileSync(
-        tmp,
-        JSON.stringify({ tasks: [...this.tasks.values()], maxConcurrent: this.maxConcurrent })
-      )
-      fs.renameSync(tmp, this.filePath)
-    } catch {
-      /* persistence is best-effort */
-    }
+    durableSave(this.filePath, JSON.stringify({ tasks: [...this.tasks.values()], maxConcurrent: this.maxConcurrent }))
   }
 }
