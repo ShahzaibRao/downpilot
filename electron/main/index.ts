@@ -540,7 +540,14 @@ ipcMain.handle('stats:get', async () => {
   stats.topSpeed = sessionTopSpeed
   ;(stats as any).speedHistory = speedHistory
   ;(stats as any).currentSpeed = speedHistory[speedHistory.length - 1] || 0
+  // Store health (fix/durable-saves): dashboard banner reads this.
+  ;(stats as any).storeStatus = getStatsStore().status()
   return stats
+})
+
+ipcMain.handle('stats:reset', async () => {
+  getStatsStore().reset()
+  return true
 })
 ipcMain.handle('history:clear', async () => {
   getHistory().clear()
