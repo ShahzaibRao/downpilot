@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import fs from 'node:fs'
 import path from 'node:path'
+import { durableLoad, durableSave, storeFileExists } from '../store-utils'
 
 function seenFile(): string {
   return path.join(app.getPath('userData'), 'seen.json')
@@ -69,32 +69,48 @@ export class SeenStore {
     if (removed) this.save()
   }
 
+  /** Bulk-add seen keys (import: keys already in `${prospectId}:${itemId}` form). */
+  importKeys(keys: string[]): number {
+    let fresh = 0
+    for (const k of keys) {
+      if (k && !this.seen.has(k)) {
+        this.seen.add(k)
+        fresh++
+      }
+    }
+    if (fresh > 0) this.save()
+    return fresh
+  }
+
+  /** All seen keys (export: grouped by prospect on the caller side). */
+  allKeys(): string[] {
+    return [...this.seen]
+  }
+
   count(): number {
     return this.seen.size
   }
 
   private load(): void {
-    try {
-      const raw = fs.readFileSync(seenFile(), 'utf8')
-      const obj = JSON.parse(raw)
-      if (obj && typeof obj === 'object') {
-        for (const k of Object.keys(obj)) this.seen.add(k)
+    const loaded = durableLoad<Record<string, unknown>>(seenFile(), (v): v is Record<string, unknown> => !!v && typeof v === 'object')
+    if (loaded) {
+      for (const k of Object.keys(loaded.data)) this.seen.add(k)
+      if (loaded.restoredFrom) {
+        console.warn(`[seen] restored from backup: ${loaded.restoredFrom}`)
+        const obj: Record<string, 1> = {}
+        for (const k of this.seen) obj[k] = 1
+        durableSave(seenFile(), JSON.stringify(obj), false)
       }
-    } catch {
-      /* fresh */
+    } else if (!storeFileExists(seenFile())) {
+      /* fresh — nothing to load */
+    } else {
+      console.error('[seen] load failed: main file and all backups unreadable (starting empty)')
     }
   }
 
   private save(): void {
-    try {
-      const obj: Record<string, 1> = {}
-      for (const k of this.seen) obj[k] = 1
-      const file = seenFile()
-      const tmp = file + '.tmp'
-      fs.writeFileSync(tmp, JSON.stringify(obj))
-      fs.renameSync(tmp, file)
-    } catch (e) {
-      console.error(`[seen] save failed: ${(e as Error).message}`)
-    }
+    const obj: Record<string, 1> = {}
+    for (const k of this.seen) obj[k] = 1
+    durableSave(seenFile(), JSON.stringify(obj))
   }
 }
