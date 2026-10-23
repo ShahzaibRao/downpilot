@@ -177,6 +177,25 @@ export class QueueManager {
     }
   }
 
+  /**
+   * Quit cleanup: kill ALL running download processes (yt-dlp/gallery-dl/ffmpeg
+   * trees) so no orphan processes survive after the app closes. Tasks left
+   * 'running' are re-queued on next startup (see load()).
+   */
+  shutdown(): void {
+    if (this.jobs.size === 0) return
+    console.log(`[queue] shutdown: killing ${this.jobs.size} running job(s)`)
+    for (const [id, job] of this.jobs) {
+      try {
+        job.cancel()
+      } catch {
+        /* best-effort */
+      }
+      this.jobs.delete(id)
+    }
+    this.save()
+  }
+
   resume(id: string): void {
     const task = this.tasks.get(id)
     if (!task) return

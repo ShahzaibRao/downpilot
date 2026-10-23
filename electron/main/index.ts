@@ -161,6 +161,13 @@ app.on('before-quit', () => {
   } catch {
     /* best-effort */
   }
+  // perf/quit-cleanup: kill all running download processes so no orphan
+  // yt-dlp/gallery-dl/ffmpeg survives after the app closes.
+  try {
+    getQueue().shutdown()
+  } catch {
+    /* best-effort */
+  }
 })
 
 // ---- IPC: downloads — queue (Phase 1c) ----
