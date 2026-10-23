@@ -1,7 +1,7 @@
 import { app } from 'electron'
-import fs from 'node:fs'
 import path from 'node:path'
 import type { Quality } from '../download/engine'
+import { durableLoad, durableSave, storeFileExists } from '../store-utils'
 
 export type ProspectStatus = 'ok' | 'paused' | 'error'
 
@@ -95,12 +95,21 @@ function prospectsFile(): string {
  */
 export class ProspectStore {
   private prospects: Prospect[] = []
-  /** true if load() read a valid file (or file didn't exist yet). If load failed
-   *  on an existing file, we refuse to save — never overwrite good data with []. */
+  /** true if load() read a valid file (or file didn't exist yet). If every
+   *  copy failed, we refuse to save — never overwrite good data with []. */
   private loadedOk = false
+  /** Backup path data was restored from on load (null = main file was fine). */
+  private restoredFrom: string | null = null
+  /** True when main file AND all backups failed (data unrecoverable locally). */
+  private loadFailed = false
 
   constructor() {
     this.load()
+  }
+
+  /** Health state for the UI banner: ok | restored | failed. */
+  status(): { loadedOk: boolean; restoredFrom: string | null; loadFailed: boolean } {
+    return { loadedOk: this.loadedOk, restoredFrom: this.restoredFrom, loadFailed: this.loadFailed }
   }
 
   list(): Prospect[] {
@@ -290,31 +299,115 @@ export class ProspectStore {
     this.save()
   }
 
+  /**
+   * Import prospects from an export file (backup/share).
+   * - Skips duplicates: same name (case-insensitive) or any overlapping link URL.
+   * - Preserves exported IDs when unused (keeps seen-data mapping intact);
+   *   generates fresh IDs on collision.
+   * - Imported prospects start fresh: status ok, no lastCheck, no failures.
+   * - Import is valid fresh data: it re-enables saves even after a failed load
+   *   (the escape hatch from the dead-end state).
+   * @returns added/skipped counts + old→new ID map (for seen-data remap).
+   */
+  importProspects(items: Array<{
+    id?: string
+    name: string
+    folder?: string
+    quality?: Quality
+    intervalMinutes?: number
+    links: Array<{ url: string; platform?: string }>
+  }>): { added: number; skipped: number; idMap: Map<string, string> } {
+    let added = 0
+    let skipped = 0
+    const idMap = new Map<string, string>()
+    const takenFolders = new Set(this.prospects.map((p) => p.folder.toLowerCase()))
+    const takenNames = new Set(this.prospects.map((p) => p.name.toLowerCase()))
+    const takenUrls = new Set<string>()
+    for (const p of this.prospects) {
+      for (const l of p.links) takenUrls.add(l.url.trim().toLowerCase())
+    }
+    const takenIds = new Set(this.prospects.map((p) => p.id))
+    for (const item of items) {
+      const name = (item.name || '').trim()
+      if (!name) { skipped++; continue }
+      const urls = item.links.map((l) => (l.url || '').trim()).filter(Boolean)
+      if (urls.length === 0) { skipped++; continue }
+      if (takenNames.has(name.toLowerCase()) || urls.some((u) => takenUrls.has(u.toLowerCase()))) {
+        skipped++
+        continue
+      }
+      // Unique folder (same rule as add()).
+      let folder = safeFolderName(item.folder || name)
+      let n = 2
+      while (takenFolders.has(folder.toLowerCase())) folder = `${safeFolderName(name)}-${n++}`
+      takenFolders.add(folder.toLowerCase())
+      // Preserve exported ID when free, else fresh (keeps seen mapping working).
+      let id = (item.id || '').trim()
+      if (!id || takenIds.has(id)) id = newId('p')
+      takenIds.add(id)
+      if (item.id) idMap.set(item.id, id)
+      const validQuality: Quality[] = ['best', '4k', '1080p', '720p', '480p']
+      const quality: Quality = validQuality.includes(item.quality as Quality) ? (item.quality as Quality) : 'best'
+      const prospect: Prospect = {
+        id,
+        name,
+        links: item.links.map((l) => ({
+          id: newId('l'),
+          url: l.url.trim(),
+          platform: l.platform || prospectNameFromUrl(l.url).platform
+        })),
+        folder,
+        quality,
+        intervalMinutes: Math.min(1440, Math.max(5, Math.floor(item.intervalMinutes ?? 60))),
+        status: 'ok',
+        failCount: 0,
+        lastCheck: null,
+        lastError: null,
+        createdAt: new Date().toISOString()
+      }
+      this.prospects.unshift(prospect)
+      takenNames.add(name.toLowerCase())
+      for (const u of urls) takenUrls.add(u.toLowerCase())
+      added++
+    }
+    if (added > 0) {
+      // Fresh valid data — safe to save even after a failed load.
+      this.loadedOk = true
+      this.loadFailed = false
+      this.restoredFrom = null
+      this.save()
+    }
+    return { added, skipped, idMap }
+  }
+
   private load(): void {
     const file = prospectsFile()
-    try {
-      const raw = fs.readFileSync(file, 'utf8')
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr)) {
-        this.prospects = arr
-        // backfill for prospects saved before these fields existed
-        for (const p of this.prospects) {
-          if (!p.quality) p.quality = 'best'
-          if (!p.intervalMinutes) p.intervalMinutes = 60
-        }
-        this.loadedOk = true
-      } else {
-        console.error(`[prospects] not an array: ${file}`)
+    const loaded = durableLoad<Prospect[]>(file, (v): v is Prospect[] => Array.isArray(v))
+    if (loaded) {
+      this.prospects = loaded.data
+      // backfill for prospects saved before these fields existed
+      for (const p of this.prospects) {
+        if (!p.quality) p.quality = 'best'
+        if (!p.intervalMinutes) p.intervalMinutes = 60
       }
-    } catch (e) {
-      if (fs.existsSync(file)) {
-        // File exists but unreadable — DO NOT wipe it. Keep prospects empty
-        // in memory but refuse to save until user adds something.
-        console.error(`[prospects] load failed (keeping file untouched): ${(e as Error).message}`)
-      } else {
-        // Fresh start — no file yet, safe to save later.
-        this.loadedOk = true
+      this.loadedOk = true
+      if (loaded.restoredFrom) {
+        this.restoredFrom = loaded.restoredFrom
+        console.warn(`[prospects] restored from backup: ${loaded.restoredFrom}`)
+        // Write recovered data back to main (no rotation — corrupt main must
+        // never enter the backup chain).
+        durableSave(file, JSON.stringify(this.prospects, null, 2), false)
       }
+    } else if (!storeFileExists(file)) {
+      // Fresh start — no file yet, safe to save later.
+      this.loadedOk = true
+      this.prospects = []
+    } else {
+      // Main file AND all backups failed — refuse to save (never wipe),
+      // and let the UI show a recovery banner instead of silent empty.
+      console.error('[prospects] load failed: main file and all backups unreadable')
+      this.loadedOk = false
+      this.loadFailed = true
       this.prospects = []
     }
   }
@@ -325,19 +418,7 @@ export class ProspectStore {
       console.error('[prospects] refusing to save: initial load failed')
       return
     }
-    try {
-      const file = prospectsFile()
-      const tmp = file + '.tmp'
-      const data = JSON.stringify(this.prospects, null, 2)
-      // Keep one backup of the previous good file (recovery from corruption).
-      try {
-        if (fs.existsSync(file)) fs.copyFileSync(file, file + '.bak')
-      } catch { /* backup best-effort */ }
-      fs.writeFileSync(tmp, data)
-      fs.renameSync(tmp, file)
-    } catch (e) {
-      console.error(`[prospects] save failed: ${(e as Error).message}`)
-    }
+    durableSave(prospectsFile(), JSON.stringify(this.prospects, null, 2))
   }
 
   /** Call on app quit — no-op now (saves are synchronous). Kept for API compat. */
